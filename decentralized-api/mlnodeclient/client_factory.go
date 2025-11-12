@@ -1,19 +1,16 @@
 package mlnodeclient
 
-import "sync"
-
 type ClientFactory interface {
-	CreateClient(pocUrl string, inferenceUrl string) MLNodeClient
+	CreateClient(pocUrl string, inferenceUrl string, authToken string) MLNodeClient
 }
 
 type HttpClientFactory struct{}
 
-func (f *HttpClientFactory) CreateClient(pocUrl string, inferenceUrl string) MLNodeClient {
-	return NewNodeClient(pocUrl, inferenceUrl)
+func (f *HttpClientFactory) CreateClient(pocUrl string, inferenceUrl string, authToken string) MLNodeClient {
+	return NewNodeClient(pocUrl, inferenceUrl, authToken)
 }
 
 type MockClientFactory struct {
-	mu      sync.RWMutex
 	clients map[string]*MockClient
 }
 
@@ -23,10 +20,7 @@ func NewMockClientFactory() *MockClientFactory {
 	}
 }
 
-func (f *MockClientFactory) CreateClient(pocUrl string, inferenceUrl string) MLNodeClient {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-
+func (f *MockClientFactory) CreateClient(pocUrl string, inferenceUrl string, authToken string) MLNodeClient {
 	// Use pocUrl as the key to identify nodes (it should be unique per node)
 	key := pocUrl
 	if client, exists := f.clients[key]; exists {
@@ -40,27 +34,15 @@ func (f *MockClientFactory) CreateClient(pocUrl string, inferenceUrl string) MLN
 }
 
 func (f *MockClientFactory) GetClientForNode(pocUrl string) *MockClient {
-	f.mu.RLock()
-	defer f.mu.RUnlock()
 	return f.clients[pocUrl]
 }
 
 func (f *MockClientFactory) GetAllClients() map[string]*MockClient {
-	f.mu.RLock()
-	defer f.mu.RUnlock()
-
-	// Return a copy of the map to avoid concurrent access to the map itself
-	clientsCopy := make(map[string]*MockClient)
-	for k, v := range f.clients {
-		clientsCopy[k] = v
-	}
-	return clientsCopy
+	return f.clients
 }
 
 func (f *MockClientFactory) Reset() {
-	f.mu.RLock()
-	defer f.mu.RUnlock()
 	for _, client := range f.clients {
-		client.Reset()
+		*client = *NewMockClient() // Reset the client state
 	}
 }
