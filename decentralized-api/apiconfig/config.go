@@ -2,6 +2,7 @@ package apiconfig
 
 import (
 	"fmt"
+	"net/url"
 	"strings"
 )
 
@@ -18,27 +19,15 @@ type Config struct {
 	UpgradePlan         UpgradePlan           `koanf:"upgrade_plan" json:"upgrade_plan"`
 	MLNodeKeyConfig     MLNodeKeyConfig       `koanf:"ml_node_key_config" json:"ml_node_key_config"`
 	Nats                NatsServerConfig      `koanf:"nats" json:"nats"`
-	TxBatching          TxBatchingConfig      `koanf:"tx_batching" json:"tx_batching"`
-	CurrentNodeVersion       string                   `koanf:"current_node_version" json:"current_node_version"`
-	LastUsedVersion          string                   `koanf:"last_used_version" json:"last_used_version"`
-	ValidationParams         ValidationParamsCache    `koanf:"validation_params" json:"validation_params"`
-	BandwidthParams          BandwidthParamsCache     `koanf:"bandwidth_params" json:"bandwidth_params"`
-	TransferAgentAccessCache TransferAgentAccessCache `koanf:"-" json:"-"` // not persisted, synced from chain
+	CurrentNodeVersion  string                `koanf:"current_node_version" json:"current_node_version"`
+	LastUsedVersion     string                `koanf:"last_used_version" json:"last_used_version"`
+	ValidationParams    ValidationParamsCache `koanf:"validation_params" json:"validation_params"`
+	BandwidthParams     BandwidthParamsCache  `koanf:"bandwidth_params" json:"bandwidth_params"`
 }
 
 type NatsServerConfig struct {
-	Host                  string `koanf:"host" json:"host"`
-	Port                  int    `koanf:"port" json:"port"`
-	MaxMessagesAgeSeconds int64  `koanf:"max_messages_age_seconds"`
-}
-
-type TxBatchingConfig struct {
-	Disabled                        bool `koanf:"disabled" json:"disabled"`
-	FlushSize                       int  `koanf:"flush_size" json:"flush_size"`
-	FlushTimeoutSeconds             int  `koanf:"flush_timeout_seconds" json:"flush_timeout_seconds"`
-	ValidationV2FlushSize           int  `koanf:"validation_v2_flush_size" json:"validation_v2_flush_size"`
-	ValidationV2FlushTimeoutSeconds int  `koanf:"validation_v2_flush_timeout_seconds" json:"validation_v2_flush_timeout_seconds"`
-	PocCommitIntervalSeconds        int  `koanf:"poc_commit_interval_seconds" json:"poc_commit_interval_seconds"`
+	Host string `koanf:"host" json:"host"`
+	Port int    `koanf:"port" json:"port"`
 }
 
 type UpgradePlan struct {
@@ -104,21 +93,46 @@ type InferenceNodeConfig struct {
 func ValidateInferenceNodeBasic(node InferenceNodeConfig) []string {
 	var errors []string
 
+	// Validate host/baseURL configuration
+	// ensures that a node configuration uses either the legacy host/port registration or the new baseURL registration, but not both.
+	// When baseURL is provided, it must be a valid HTTP(S) URL. AuthToken is always optional (no validation needed)
+	hasHostPorts := strings.TrimSpace(node.Host) != "" || node.InferencePort > 0 || node.PoCPort > 0
+	hasBaseURL := strings.TrimSpace(node.BaseURL) != ""
+
+	if hasHostPorts && hasBaseURL {
+		errors = append(errors, "node configuration error: cannot specify both (Host+Ports) and baseURL. Use either Host+InferencePort+PoCPort OR baseURL")
+	}
+
+	if !hasHostPorts && !hasBaseURL {
+		errors = append(errors, "node configuration error: must specify either (Host+InferencePort+PoCPort) OR baseURL")
+	}
+
+	if hasHostPorts {
+		if strings.TrimSpace(node.Host) == "" {
+			errors = append(errors, "host is required and cannot be empty when using host+port registration")
+		}
+
+		if node.InferencePort <= 0 || node.InferencePort > 65535 {
+			errors = append(errors, fmt.Sprintf("inference_port must be between 1 and 65535, got %d", node.InferencePort))
+		}
+
+		if node.PoCPort <= 0 || node.PoCPort > 65535 {
+			errors = append(errors, fmt.Sprintf("poc_port must be between 1 and 65535, got %d", node.PoCPort))
+		}
+	}
+
+	if hasBaseURL {
+		parsedURL, err := url.Parse(node.BaseURL)
+		if err != nil {
+			errors = append(errors, fmt.Sprintf("node configuration error: baseURL is not a valid URL: %v", err))
+		} else if parsedURL.Scheme != "http" && parsedURL.Scheme != "https" {
+			errors = append(errors, fmt.Sprintf("node configuration error: baseURL must use http:// or https:// scheme, got: %s", parsedURL.Scheme))
+		}
+	}
+
 	// Validate required fields
 	if strings.TrimSpace(node.Id) == "" {
 		errors = append(errors, "node id is required and cannot be empty")
-	}
-
-	if strings.TrimSpace(node.Host) == "" {
-		errors = append(errors, "host is required and cannot be empty")
-	}
-
-	if node.InferencePort <= 0 || node.InferencePort > 65535 {
-		errors = append(errors, fmt.Sprintf("inference_port must be between 1 and 65535, got %d", node.InferencePort))
-	}
-
-	if node.PoCPort <= 0 || node.PoCPort > 65535 {
-		errors = append(errors, fmt.Sprintf("poc_port must be between 1 and 65535, got %d", node.PoCPort))
 	}
 
 	if node.MaxConcurrent <= 0 {
@@ -174,11 +188,4 @@ type BandwidthParamsCache struct {
 	EstimatedLimitsPerBlockKb uint64  `koanf:"estimated_limits_per_block_kb" json:"estimated_limits_per_block_kb"`
 	KbPerInputToken           float64 `koanf:"kb_per_input_token" json:"kb_per_input_token"`
 	KbPerOutputToken          float64 `koanf:"kb_per_output_token" json:"kb_per_output_token"`
-	MaxInferencesPerBlock     uint64  `koanf:"max_inferences_per_block" json:"max_inferences_per_block"`
-}
-
-// TransferAgentAccessCache caches the allowed TA addresses for O(1) lookups.
-type TransferAgentAccessCache struct {
-	AllowedAddresses map[string]struct{} // O(1) lookup
-	IsEnabled        bool                // true if whitelist is non-empty
 }
