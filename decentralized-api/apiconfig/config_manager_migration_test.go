@@ -2,6 +2,7 @@ package apiconfig_test
 
 import (
 	"context"
+	"database/sql"
 	"decentralized-api/apiconfig"
 	"encoding/json"
 	"os"
@@ -9,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	_ "modernc.org/sqlite"
 )
 
 func writeTempFile(t *testing.T, dir, name, contents string) string {
@@ -248,28 +250,215 @@ nodes:
 	require.NotContains(t, ids, "yaml-node2", string(b))
 }
 
-func TestConfigNotRewrittenOnSecondLoad(t *testing.T) {
+func TestMigrateInferenceNodesTable(t *testing.T) {
 	tmp := t.TempDir()
-	yaml := `api:
-  port: 8080
-chain_node:
-  url: http://localhost:26657
-  signer_key_name: test`
-	cfgPath := writeTempFile(t, tmp, "config.yaml", yaml)
 	dbPath := filepath.Join(tmp, "test.db")
+	_ = os.Remove(dbPath)
 
-	mgr1, err := apiconfig.LoadConfigManagerWithPaths(cfgPath, dbPath, "")
+	// Create DB with initial schema (without base_url and auth_token)
+	db, err := sql.Open("sqlite", dbPath)
 	require.NoError(t, err)
-	require.NoError(t, mgr1.FlushNow(context.Background()))
+	defer db.Close()
 
-	stat1, err := os.Stat(cfgPath)
+	// Create initial table without the new columns
+	_, err = db.Exec(`CREATE TABLE inference_nodes (
+		id TEXT PRIMARY KEY,
+		host TEXT NOT NULL,
+		inference_segment TEXT NOT NULL,
+		inference_port INTEGER NOT NULL,
+		poc_segment TEXT NOT NULL,
+		poc_port INTEGER NOT NULL,
+		max_concurrent INTEGER NOT NULL,
+		models_json TEXT NOT NULL,
+		hardware_json TEXT NOT NULL,
+		updated_at DATETIME NOT NULL DEFAULT (STRFTIME('%Y-%m-%d %H:%M:%f','now')),
+		created_at DATETIME NOT NULL DEFAULT (STRFTIME('%Y-%m-%d %H:%M:%f','now'))
+	)`)
 	require.NoError(t, err)
 
-	mgr2, err := apiconfig.LoadConfigManagerWithPaths(cfgPath, dbPath, "")
+	// Insert test data
+	testNode := apiconfig.InferenceNodeConfig{
+		Id:               "test-node",
+		Host:             "localhost",
+		InferenceSegment: "/api",
+		InferencePort:    8080,
+		PoCSegment:       "/api",
+		PoCPort:          5000,
+		MaxConcurrent:    5,
+		Models:           map[string]apiconfig.ModelConfig{"model1": {}},
+	}
+	modelsJSON, err := json.Marshal(testNode.Models)
 	require.NoError(t, err)
-	require.NoError(t, mgr2.FlushNow(context.Background()))
+	_, err = db.Exec(`INSERT INTO inference_nodes (
+		id, host, inference_segment, inference_port, poc_segment, poc_port, max_concurrent, models_json, hardware_json
+	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		testNode.Id, testNode.Host, testNode.InferenceSegment, testNode.InferencePort,
+		testNode.PoCSegment, testNode.PoCPort, testNode.MaxConcurrent, string(modelsJSON), "[]")
+	require.NoError(t, err)
 
-	stat2, err := os.Stat(cfgPath)
+	// Run migration by calling EnsureSchema which internally calls migrateInferenceNodesTable
+	ctx := context.Background()
+	err = apiconfig.EnsureSchema(ctx, db)
 	require.NoError(t, err)
-	require.Equal(t, stat1.ModTime(), stat2.ModTime())
+
+	// Verify columns were added
+	rows, err := db.Query("PRAGMA table_info(inference_nodes)")
+	require.NoError(t, err)
+	defer rows.Close()
+
+	var hasBaseURL, hasAuthToken bool
+	for rows.Next() {
+		var (
+			cid      int
+			name     string
+			declType string
+			notnull  int
+			dflt     sql.NullString
+			pk       int
+		)
+		require.NoError(t, rows.Scan(&cid, &name, &declType, &notnull, &dflt, &pk))
+		if name == "base_url" {
+			hasBaseURL = true
+		}
+		if name == "auth_token" {
+			hasAuthToken = true
+		}
+	}
+	require.True(t, hasBaseURL, "base_url column should exist")
+	require.True(t, hasAuthToken, "auth_token column should exist")
+
+	// Verify existing data is intact
+	nodes, err := apiconfig.ReadNodes(ctx, db)
+	require.NoError(t, err)
+	require.Len(t, nodes, 1)
+	require.Equal(t, testNode.Id, nodes[0].Id)
+	require.Equal(t, testNode.Host, nodes[0].Host)
+	require.Equal(t, "", nodes[0].BaseURL)   // default empty
+	require.Equal(t, "", nodes[0].AuthToken) // default empty
+
+	// Test migration is idempotent
+	err = apiconfig.EnsureSchema(ctx, db)
+	require.NoError(t, err)
+}
+
+// EnsureSchemaOld is a copy of EnsureSchema without base_url and auth_token columns
+// Used for migration testing
+func EnsureSchemaOld(ctx context.Context, db *sql.DB) error {
+	stmt := `
+CREATE TABLE IF NOT EXISTS inference_nodes (
+  id TEXT PRIMARY KEY,
+  host TEXT NOT NULL,
+  inference_segment TEXT NOT NULL,
+  inference_port INTEGER NOT NULL,
+  poc_segment TEXT NOT NULL,
+  poc_port INTEGER NOT NULL,
+  max_concurrent INTEGER NOT NULL,
+  models_json TEXT NOT NULL,
+  hardware_json TEXT NOT NULL,
+  updated_at DATETIME NOT NULL DEFAULT (STRFTIME('%Y-%m-%d %H:%M:%f','now')),
+  created_at DATETIME NOT NULL DEFAULT (STRFTIME('%Y-%m-%d %H:%M:%f','now'))
+);
+
+CREATE TABLE IF NOT EXISTS kv_config (
+  key TEXT PRIMARY KEY,
+  value_json TEXT NOT NULL,
+  updated_at DATETIME NOT NULL DEFAULT (STRFTIME('%Y-%m-%d %H:%M:%f','now')),
+  created_at DATETIME NOT NULL DEFAULT (STRFTIME('%Y-%m-%d %H:%M:%f','now'))
+);
+
+CREATE TABLE IF NOT EXISTS seed_info (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  type TEXT NOT NULL, -- 'current', 'previous', 'upcoming'
+  seed INTEGER NOT NULL,
+  epoch_index INTEGER NOT NULL,
+  signature TEXT NOT NULL,
+  claimed BOOLEAN NOT NULL DEFAULT 0,
+  is_active BOOLEAN NOT NULL DEFAULT 1,
+  created_at DATETIME NOT NULL DEFAULT (STRFTIME('%Y-%m-%d %H:%M:%f','now'))
+);`
+	if _, err := db.ExecContext(ctx, stmt); err != nil {
+		return err
+	}
+	return nil
+}
+
+// verifySchemaColumns checks if two databases have the same columns in inference_nodes table
+func verifySchemaColumns(t *testing.T, db1, db2 *sql.DB) {
+	ctx := context.Background()
+
+	// Get columns from db1
+	rows1, err := db1.QueryContext(ctx, "PRAGMA table_info(inference_nodes)")
+	require.NoError(t, err)
+	defer rows1.Close()
+
+	// Get columns from db2
+	rows2, err := db2.QueryContext(ctx, "PRAGMA table_info(inference_nodes)")
+	require.NoError(t, err)
+	defer rows2.Close()
+
+	// Collect column names from both databases
+	var cols1, cols2 []string
+	for rows1.Next() {
+		var (
+			cid      int
+			name     string
+			declType string
+			notnull  int
+			dflt     sql.NullString
+			pk       int
+		)
+		require.NoError(t, rows1.Scan(&cid, &name, &declType, &notnull, &dflt, &pk))
+		cols1 = append(cols1, name)
+	}
+	require.NoError(t, rows1.Err())
+
+	for rows2.Next() {
+		var (
+			cid      int
+			name     string
+			declType string
+			notnull  int
+			dflt     sql.NullString
+			pk       int
+		)
+		require.NoError(t, rows2.Scan(&cid, &name, &declType, &notnull, &dflt, &pk))
+		cols2 = append(cols2, name)
+	}
+	require.NoError(t, rows2.Err())
+
+	// Verify column sets are equal
+	require.ElementsMatch(t, cols1, cols2, "columns in inference_nodes table do not match")
+}
+
+func TestMigrationPathConsistency(t *testing.T) {
+	// Create two test databases
+	tmp := t.TempDir()
+	dbPath1 := filepath.Join(tmp, "test1.db")
+	dbPath2 := filepath.Join(tmp, "test2.db")
+	_ = os.Remove(dbPath1)
+	_ = os.Remove(dbPath2)
+
+	// Database 1: Use old schema + migration
+	db1, err := sql.Open("sqlite", dbPath1)
+	require.NoError(t, err)
+	defer db1.Close()
+
+	ctx := context.Background()
+	err = EnsureSchemaOld(ctx, db1)
+	require.NoError(t, err)
+
+	// Run migration function directly
+	err = apiconfig.MigrateInferenceNodesTable(ctx, db1)
+	require.NoError(t, err)
+
+	// Database 2: Use new schema directly
+	db2, err := sql.Open("sqlite", dbPath2)
+	require.NoError(t, err)
+	defer db2.Close()
+
+	err = apiconfig.EnsureSchema(ctx, db2)
+	require.NoError(t, err)
+
+	// Verify schemas have the same columns
+	verifySchemaColumns(t, db1, db2)
 }

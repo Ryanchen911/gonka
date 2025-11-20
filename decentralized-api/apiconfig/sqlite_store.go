@@ -111,11 +111,11 @@ CREATE TABLE IF NOT EXISTS seed_info (
 	}
 
 	// Migrate existing tables: add base_url and auth_token columns if they don't exist
-	return migrateInferenceNodesTable(ctx, db)
+	return MigrateInferenceNodesTable(ctx, db)
 }
 
-// migrateInferenceNodesTable adds base_url and auth_token columns to existing inference_nodes table
-func migrateInferenceNodesTable(ctx context.Context, db *sql.DB) error {
+// MigrateInferenceNodesTable adds base_url and auth_token columns to existing inference_nodes table
+func MigrateInferenceNodesTable(ctx context.Context, db *sql.DB) error {
 	// Check if base_url column exists
 	rows, err := db.QueryContext(ctx, "PRAGMA table_info(inference_nodes)")
 	if err != nil {
