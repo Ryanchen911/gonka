@@ -156,26 +156,6 @@ func TestURLHelperFunctions(t *testing.T) {
 		PoCSegment: "/api/v1",
 	}
 
-	t.Run("formatURL", func(t *testing.T) {
-		url := formatURL("localhost", 8080, "/api/v1")
-		assert.Equal(t, "http://localhost:8080/api/v1", url)
-	})
-
-	t.Run("formatURLWithVersion", func(t *testing.T) {
-		url := formatURLWithVersion("localhost", 8080, "v2", "/api/v1")
-		assert.Equal(t, "http://localhost:8080/v2/api/v1", url)
-	})
-
-	t.Run("getPoCUrl", func(t *testing.T) {
-		url := getPoCUrl(node)
-		assert.Equal(t, "http://localhost:8080/api/v1", url)
-	})
-
-	t.Run("getPoCUrlVersioned", func(t *testing.T) {
-		url := getPoCUrlVersioned(node, "v2")
-		assert.Equal(t, "http://localhost:8080/v2/api/v1", url)
-	})
-
 	t.Run("getPoCUrlWithVersion empty version", func(t *testing.T) {
 		url := getPoCUrlWithVersion(node, "")
 		assert.Equal(t, "http://localhost:8080/api/v1", url)
@@ -185,6 +165,35 @@ func TestURLHelperFunctions(t *testing.T) {
 		url := getPoCUrlWithVersion(node, "v2")
 		assert.Equal(t, "http://localhost:8080/v2/api/v1", url)
 	})
+
+	t.Run("getPoCUrlWithVersion with BaseURL", func(t *testing.T) {
+		nodeWithBaseURL := node
+		nodeWithBaseURL.BaseURL = "https://api.example.com"
+		url := getPoCUrlWithVersion(nodeWithBaseURL, "v2")
+		assert.Equal(t, "https://api.example.com/v2/api/v1", url)
+	})
+
+	t.Run("getPoCUrlWithVersion with BaseURL and empty version", func(t *testing.T) {
+		nodeWithBaseURL := node
+		nodeWithBaseURL.BaseURL = "https://api.example.com"
+		url := getPoCUrlWithVersion(nodeWithBaseURL, "")
+		assert.Equal(t, "https://api.example.com/api/v1", url)
+	})
+
+	t.Run("getPoCUrlWithVersion with BaseURL with trailing slash", func(t *testing.T) {
+		nodeWithBaseURL := node
+		nodeWithBaseURL.BaseURL = "https://api.example.com/"
+		url := getPoCUrlWithVersion(nodeWithBaseURL, "v2")
+		assert.Equal(t, "https://api.example.com/v2/api/v1", url)
+	})
+
+	t.Run("getPoCUrlWithVersion with empty segment", func(t *testing.T) {
+		nodeWithEmptySegment := node
+		nodeWithEmptySegment.PoCSegment = ""
+		url := getPoCUrlWithVersion(nodeWithEmptySegment, "v2")
+		assert.Equal(t, "http://localhost:8080/v2", url)
+	})
+
 }
 
 func TestBuildRecommendationMap(t *testing.T) {

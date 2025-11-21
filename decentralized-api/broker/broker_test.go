@@ -464,6 +464,79 @@ func TestNodeShouldBeOperationalTest(t *testing.T) {
 	require.False(t, ShouldBeOperational(adminState, 12, types.InferencePhase))
 }
 
+func TestGetMlNodeUrl(t *testing.T) {
+	tests := []struct {
+		name     string
+		elements MlNodePathElements
+		expected string
+	}{
+		{
+			name: "with BaseURL and Version",
+			elements: MlNodePathElements{
+				BaseURL: "https://api.example.com",
+				Version: "v2",
+				Segment: "/endpoint",
+			},
+			expected: "https://api.example.com/v2/endpoint",
+		},
+		{
+			name: "with BaseURL without Version",
+			elements: MlNodePathElements{
+				BaseURL: "https://api.example.com",
+				Version: "",
+				Segment: "/endpoint",
+			},
+			expected: "https://api.example.com/endpoint",
+		},
+		{
+			name: "without BaseURL with Version",
+			elements: MlNodePathElements{
+				Host:    "example.com",
+				Port:    8080,
+				Version: "v2",
+				Segment: "/endpoint",
+			},
+			expected: "http://example.com:8080/v2/endpoint",
+		},
+		{
+			name: "without BaseURL without Version",
+			elements: MlNodePathElements{
+				Host:    "example.com",
+				Port:    8080,
+				Version: "",
+				Segment: "/endpoint",
+			},
+			expected: "http://example.com:8080/endpoint",
+		},
+		{
+			name: "BaseURL with trailing slash",
+			elements: MlNodePathElements{
+				BaseURL: "https://api.example.com/",
+				Version: "v2",
+				Segment: "/endpoint",
+			},
+			expected: "https://api.example.com/v2/endpoint",
+		},
+		{
+			name: "empty Segment",
+			elements: MlNodePathElements{
+				Host:    "example.com",
+				Port:    8080,
+				Version: "v2",
+				Segment: "",
+			},
+			expected: "http://example.com:8080/v2",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			actual := GetMlNodeUrl(tt.elements)
+			assert.Equal(t, tt.expected, actual)
+		})
+	}
+}
+
 func TestVersionedUrls(t *testing.T) {
 	node := Node{
 		Host:             "example.com",
@@ -473,12 +546,8 @@ func TestVersionedUrls(t *testing.T) {
 		PoCSegment:       "/api/v1",
 	}
 
-	// Test InferenceUrl without version (backward compatibility)
-	expectedInferenceUrl := "http://example.com:8080/api/v1"
-	actualInferenceUrl := node.InferenceUrl()
-	assert.Equal(t, expectedInferenceUrl, actualInferenceUrl)
-
 	// Test InferenceUrlWithVersion with empty version (should fall back to non-versioned)
+	expectedInferenceUrl := "http://example.com:8080/api/v1"
 	actualInferenceUrlEmpty := node.InferenceUrlWithVersion("")
 	assert.Equal(t, expectedInferenceUrl, actualInferenceUrlEmpty)
 
@@ -487,12 +556,8 @@ func TestVersionedUrls(t *testing.T) {
 	actualVersionedInferenceUrl := node.InferenceUrlWithVersion("v3.0.8")
 	assert.Equal(t, expectedVersionedInferenceUrl, actualVersionedInferenceUrl)
 
-	// Test PoCUrl without version (backward compatibility)
-	expectedPocUrl := "http://example.com:9090/api/v1"
-	actualPocUrl := node.PoCUrl()
-	assert.Equal(t, expectedPocUrl, actualPocUrl)
-
 	// Test PoCUrlWithVersion with empty version (should fall back to non-versioned)
+	expectedPocUrl := "http://example.com:9090/api/v1"
 	actualPocUrlEmpty := node.PoCUrlWithVersion("")
 	assert.Equal(t, expectedPocUrl, actualPocUrlEmpty)
 

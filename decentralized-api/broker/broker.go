@@ -204,42 +204,47 @@ type Node struct {
 	Hardware         []apiconfig.Hardware `json:"hardware"`
 }
 
-func (n *Node) InferenceUrl() string {
-	return fmt.Sprintf("http://%s:%d%s", n.Host, n.InferencePort, n.InferenceSegment)
+type MlNodePathElements struct {
+	Host    string `json:"host"`
+	Port    int    `json:"port"`
+	BaseURL string `json:"base_url"`
+	Version string `json:"version"`
+	Segment string `json:"segment"`
+}
+
+func GetMlNodeUrl(elements MlNodePathElements) string {
+	// If BaseURL is provided, build on top of it
+	if strings.TrimSpace(elements.BaseURL) != "" {
+		base := strings.TrimRight(elements.BaseURL, "/")
+		if strings.TrimSpace(elements.Version) == "" {
+			return fmt.Sprintf("%s%s", base, elements.Segment)
+		}
+		return fmt.Sprintf("%s/%s%s", base, elements.Version, elements.Segment)
+	}
+	if strings.TrimSpace(elements.Version) == "" {
+		return fmt.Sprintf("http://%s:%d%s", elements.Host, elements.Port, elements.Segment)
+	}
+	return fmt.Sprintf("http://%s:%d/%s%s", elements.Host, elements.Port, elements.Version, elements.Segment)
 }
 
 func (n *Node) InferenceUrlWithVersion(version string) string {
-	// If BaseURL is provided, build on top of it
-	if n.BaseURL != "" {
-		base := strings.TrimRight(n.BaseURL, "/")
-		if version == "" {
-			return fmt.Sprintf("%s%s", base, n.InferenceSegment)
-		}
-		return fmt.Sprintf("%s/%s%s", base, version, n.InferenceSegment)
-	}
-	if version == "" {
-		return n.InferenceUrl()
-	}
-	return fmt.Sprintf("http://%s:%d/%s%s", n.Host, n.InferencePort, version, n.InferenceSegment)
-}
-
-func (n *Node) PoCUrl() string {
-	return fmt.Sprintf("http://%s:%d%s", n.Host, n.PoCPort, n.PoCSegment)
+	return GetMlNodeUrl(MlNodePathElements{
+		Host:    n.Host,
+		Port:    n.InferencePort,
+		BaseURL: n.BaseURL,
+		Version: version,
+		Segment: n.InferenceSegment,
+	})
 }
 
 func (n *Node) PoCUrlWithVersion(version string) string {
-	// If BaseURL is provided, build on top of it
-	if n.BaseURL != "" {
-		base := strings.TrimRight(n.BaseURL, "/")
-		if version == "" {
-			return fmt.Sprintf("%s%s", base, n.PoCSegment)
-		}
-		return fmt.Sprintf("%s/%s%s", base, version, n.PoCSegment)
-	}
-	if version == "" {
-		return n.PoCUrl()
-	}
-	return fmt.Sprintf("http://%s:%d/%s%s", n.Host, n.PoCPort, version, n.PoCSegment)
+	return GetMlNodeUrl(MlNodePathElements{
+		Host:    n.Host,
+		Port:    n.PoCPort,
+		BaseURL: n.BaseURL,
+		Version: version,
+		Segment: n.PoCSegment,
+	})
 }
 
 type NodeWithState struct {
