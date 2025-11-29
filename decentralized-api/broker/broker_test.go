@@ -527,6 +527,15 @@ func TestGetMlNodeUrl(t *testing.T) {
 			},
 			expected: "http://example.com:8080/v2",
 		},
+		{
+			name: "BaseURL with empty segment",
+			elements: MlNodePathElements{
+				BaseURL: "https://api.example.com",
+				Version: "v2",
+				Segment: "",
+			},
+			expected: "https://api.example.com/v2",
+		},
 	}
 
 	for _, tt := range tests {
