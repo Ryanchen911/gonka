@@ -219,12 +219,12 @@ func GetMlNodeUrl(elements MlNodePathElements) string {
 		if strings.TrimSpace(elements.Version) == "" {
 			return fmt.Sprintf("%s%s", base, elements.Segment)
 		}
-		return fmt.Sprintf("%s/%s%s", base, elements.Version, elements.Segment)
+		return fmt.Sprintf("%s/%s%s", base, strings.TrimSpace(elements.Version), elements.Segment)
 	}
 	if strings.TrimSpace(elements.Version) == "" {
 		return fmt.Sprintf("http://%s:%d%s", elements.Host, elements.Port, elements.Segment)
 	}
-	return fmt.Sprintf("http://%s:%d/%s%s", elements.Host, elements.Port, elements.Version, elements.Segment)
+	return fmt.Sprintf("http://%s:%d/%s%s", elements.Host, elements.Port, strings.TrimSpace(elements.Version), elements.Segment)
 }
 
 func (n *Node) InferenceUrlWithVersion(version string) string {
@@ -245,6 +245,19 @@ func (n *Node) PoCUrlWithVersion(version string) string {
 		Version: version,
 		Segment: n.PoCSegment,
 	})
+}
+
+// BaseUrlWithVersion constructs a base URL with version
+func BaseUrlWithVersion(baseURL, version string) string {
+	base := strings.TrimRight(baseURL, "/")
+	if strings.TrimSpace(version) != "" {
+		return fmt.Sprintf("%s/%s", base, strings.TrimSpace(version))
+	}
+	return base
+}
+
+func (n *Node) BaseUrlWithVersion(version string) string {
+	return BaseUrlWithVersion(n.BaseURL, version)
 }
 
 type NodeWithState struct {
@@ -523,7 +536,7 @@ func (b *Broker) QueueMessage(command Command) error {
 
 func (b *Broker) NewNodeClient(node *Node) mlnodeclient.MLNodeClient {
 	version := b.configManager.GetCurrentNodeVersion()
-	return b.mlNodeClientFactory.CreateClient(node.PoCUrlWithVersion(version), node.InferenceUrlWithVersion(version), node.AuthToken, node.BaseURL)
+	return b.mlNodeClientFactory.CreateClient(node.PoCUrlWithVersion(version), node.InferenceUrlWithVersion(version), node.AuthToken, node.BaseUrlWithVersion(version))
 }
 
 func (b *Broker) lockAvailableNode(command LockAvailableNode) {

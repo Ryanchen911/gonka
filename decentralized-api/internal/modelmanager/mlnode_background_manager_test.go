@@ -675,6 +675,28 @@ func TestURLFormatting(t *testing.T) {
 			isPoC:    true,
 			expected: "http://localhost:8080/v2",
 		},
+		{
+			name: "Version_with_whitespace",
+			node: apiconfig.InferenceNodeConfig{
+				Host:             "localhost",
+				InferencePort:    8081,
+				InferenceSegment: "/inference",
+			},
+			version:  " v2 ",
+			isPoC:    false,
+			expected: "http://localhost:8081/v2/inference",
+		},
+		{
+			name: "Version_with_whitespace_PoC",
+			node: apiconfig.InferenceNodeConfig{
+				Host:       "localhost",
+				PoCPort:    8080,
+				PoCSegment: "/api",
+			},
+			version:  " v2 ",
+			isPoC:    true,
+			expected: "http://localhost:8080/v2/api",
+		},
 	}
 
 	for _, tt := range tests {
@@ -687,6 +709,82 @@ func TestURLFormatting(t *testing.T) {
 			}
 			if url != tt.expected {
 				t.Errorf("expected %s, got %s", tt.expected, url)
+			}
+		})
+	}
+}
+
+// Test getBaseUrlWithVersion
+func TestGetBaseUrlWithVersion(t *testing.T) {
+	tests := []struct {
+		name     string
+		node     apiconfig.InferenceNodeConfig
+		version  string
+		expected string
+	}{
+		{
+			name: "Base URL with version",
+			node: apiconfig.InferenceNodeConfig{
+				BaseURL: "https://api.example.com",
+			},
+			version:  "v1",
+			expected: "https://api.example.com/v1",
+		},
+		{
+			name: "Base URL without version",
+			node: apiconfig.InferenceNodeConfig{
+				BaseURL: "https://api.example.com",
+			},
+			version:  "",
+			expected: "https://api.example.com",
+		},
+		{
+			name: "Base URL with trailing slash and version",
+			node: apiconfig.InferenceNodeConfig{
+				BaseURL: "https://api.example.com/",
+			},
+			version:  "v1",
+			expected: "https://api.example.com/v1",
+		},
+		{
+			name: "Base URL with trailing slash and no version",
+			node: apiconfig.InferenceNodeConfig{
+				BaseURL: "https://api.example.com/",
+			},
+			version:  "",
+			expected: "https://api.example.com",
+		},
+		{
+			name: "Empty base URL with version",
+			node: apiconfig.InferenceNodeConfig{
+				BaseURL: "",
+			},
+			version:  "v1",
+			expected: "/v1",
+		},
+		{
+			name: "Empty base URL without version",
+			node: apiconfig.InferenceNodeConfig{
+				BaseURL: "",
+			},
+			version:  "",
+			expected: "",
+		},
+		{
+			name: "Version with whitespace",
+			node: apiconfig.InferenceNodeConfig{
+				BaseURL: "https://api.example.com",
+			},
+			version:  " v1 ",
+			expected: "https://api.example.com/v1",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := getBaseUrlWithVersion(tt.node, tt.version)
+			if result != tt.expected {
+				t.Errorf("getBaseUrlWithVersion() = %q; expected %q", result, tt.expected)
 			}
 		})
 	}
