@@ -98,12 +98,29 @@ message ValidationParams {
   Decimal quick_failure_threshold = 23; // The threshold of probabilty of consecutive failures to cause a quick invalidation
 }
 
+message PoCModelParams {
+  option (gogoproto.equal) = true;
+  int32 dim = 1;
+  int32 n_layers = 2;
+  int32 n_heads = 3;
+  int32 n_kv_heads = 4;
+  int32 vocab_size = 5;
+  Decimal ffn_dim_multiplier = 6;
+  int32 multiple_of = 7;
+  Decimal norm_eps = 8;
+  int32 rope_theta = 9;
+  bool use_scaled_rope = 10;
+  int32 seq_len = 11;
+  Decimal r_target = 12;
+}
+
 message PocParams {
   option (gogoproto.equal) = true;
   int32 default_difficulty = 1;
   int32 validation_sample_size = 2;
   uint64 poc_data_pruning_epoch_threshold = 3;
-  Decimal weight_scale_factor = 4;  // Scale factor for PoC weights (default: 1.0 if not set)
+  Decimal weight_scale_factor = 4;
+  PoCModelParams model_params = 5;
 }
 
 message Decimal {

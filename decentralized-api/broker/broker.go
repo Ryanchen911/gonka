@@ -41,6 +41,7 @@ type BrokerChainBridge interface {
 	GetGovernanceModels() (*types.QueryModelsAllResponse, error)
 	GetCurrentEpochGroupData() (*types.QueryCurrentEpochGroupDataResponse, error)
 	GetEpochGroupDataByModelId(pocHeight uint64, modelId string) (*types.QueryGetEpochGroupDataResponse, error)
+	GetParams() (*types.QueryParamsResponse, error)
 }
 
 type BrokerChainBridgeImpl struct {
@@ -98,6 +99,11 @@ func (b *BrokerChainBridgeImpl) GetEpochGroupDataByModelId(epochIndex uint64, mo
 		ModelId:    modelId,
 	}
 	return queryClient.EpochGroupData(b.client.GetContext(), req)
+}
+
+func (b *BrokerChainBridgeImpl) GetParams() (*types.QueryParamsResponse, error) {
+	queryClient := b.client.NewInferenceQueryClient()
+	return queryClient.Params(b.client.GetContext(), &types.QueryParamsRequest{})
 }
 
 type Broker struct {
@@ -790,6 +796,7 @@ func hardwareEquals(a *types.HardwareNode, b *types.HardwareNode) bool {
 type pocParams struct {
 	startPoCBlockHeight int64
 	startPoCBlockHash   string
+	modelParams         *types.PoCModelParams
 }
 
 const reconciliationInterval = 30 * time.Second
@@ -1097,6 +1104,7 @@ func (b *Broker) getCommandForState(nodeState *NodeState, pocGenParams *pocParam
 					PubKey:      b.participantInfo.GetPubKey(),
 					CallbackUrl: GetPocBatchesCallbackUrl(b.callbackUrl),
 					TotalNodes:  totalNodes,
+					ModelParams: pocGenParams.modelParams,
 				}
 			}
 			logging.Error("Cannot create StartPoCNodeCommand: missing PoC parameters", types.Nodes, "error", pocGenErr)
@@ -1109,6 +1117,7 @@ func (b *Broker) getCommandForState(nodeState *NodeState, pocGenParams *pocParam
 					PubKey:      b.participantInfo.GetPubKey(),
 					CallbackUrl: GetPocValidateCallbackUrl(b.callbackUrl),
 					TotalNodes:  totalNodes,
+					ModelParams: pocGenParams.modelParams,
 				}
 			}
 			logging.Error("Cannot create InitValidateNodeCommand: missing PoC parameters", types.Nodes, "error", pocGenErr)
@@ -1143,9 +1152,19 @@ func (b *Broker) queryCurrentPoCParams(epochPoCStartHeight int64) (*pocParams, e
 		logging.Error("Failed to query PoC start block hash", types.Nodes, "height", epochPoCStartHeight, "error", err)
 		return nil, err
 	}
+
+	paramsResp, err := b.chainBridge.GetParams()
+	var modelParams *types.PoCModelParams
+	if err != nil {
+		logging.Warn("Failed to query chain params, will use default model params", types.Nodes, "error", err)
+	} else if paramsResp.Params.PocParams != nil {
+		modelParams = paramsResp.Params.PocParams.ModelParams
+	}
+
 	return &pocParams{
 		startPoCBlockHeight: epochPoCStartHeight,
 		startPoCBlockHash:   hash,
+		modelParams:         modelParams,
 	}, nil
 }
 
