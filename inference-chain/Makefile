@@ -77,6 +77,7 @@ define DOCKER_BUILD
 	@rm -rf .docker-context && mkdir -p .docker-context/inference-chain
 	@cp -r * .docker-context/inference-chain/ 2>/dev/null || true
 	@cp -r .[^.]* .docker-context/inference-chain/ 2>/dev/null || true
+	@rm -rf .docker-context/inference-chain/.docker-context
 	@mkdir -p .docker-context/cosmovisor && cp -r ../cosmovisor/* .docker-context/cosmovisor/
 	@DOCKER_BUILDKIT=1 \
 	docker build \
@@ -104,6 +105,7 @@ define DOCKER_BUILD_UPGRADE
 	@rm -rf .docker-context && mkdir -p .docker-context/inference-chain
 	@cp -r * .docker-context/inference-chain/ 2>/dev/null || true
 	@cp -r .[^.]* .docker-context/inference-chain/ 2>/dev/null || true
+	@rm -rf .docker-context/inference-chain/.docker-context
 	@mkdir -p .docker-context/cosmovisor && cp -r ../cosmovisor/* .docker-context/cosmovisor/
 	@DOCKER_BUILDKIT=1 \
 	docker build \

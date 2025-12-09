@@ -84,7 +84,8 @@ class InferenceAccountingTests : TestermintTest() {
         val payload = inference.copy(seed = seed).toJson()
         val timestamp = Instant.now().toEpochNanos()
         val address = genesis.node.getColdAddress()
-        val signature = genesis.node.signPayload(payload, address, timestamp, endpointAccount = address)
+        // Phase 3: Dev signs hash of original_prompt
+        val signature = genesis.node.signRequest(payload, address, timestamp, endpointAccount = address)
 
 
         CoroutineScope(Dispatchers.Default).launch {

@@ -8,6 +8,7 @@ import (
 	"decentralized-api/internal/poc"
 	"decentralized-api/internal/validation"
 	"decentralized-api/logging"
+	"sync/atomic"
 	"time"
 
 	"github.com/productscience/inference/api/inference/inference"
@@ -36,6 +37,7 @@ func NewRewardRecoveryChecker(
 type RewardRecoveryChecker struct {
 	launchBlockHeight       int64
 	lastRecoveryBlockHeight int64
+	autoRecoveryRunning     atomic.Bool
 	phaseTracker            *chainphase.ChainPhaseTracker
 	recorder                *cosmosclient.InferenceCosmosClient
 	validator               *validation.InferenceValidator
@@ -82,6 +84,13 @@ func (c *RewardRecoveryChecker) RecoverIfNeeded(
 	}
 
 	c.lastRecoveryBlockHeight = currentBlockHeight
+
+	// Prevent overlapping auto-recoveries
+	if !c.autoRecoveryRunning.CompareAndSwap(false, true) {
+		logging.Debug("[AutoRewardRecovery] Skipping, previous recovery still running", types.Claims)
+		return
+	}
+
 	go func() {
 		c.AutoRewardRecovery()
 	}()
@@ -89,6 +98,8 @@ func (c *RewardRecoveryChecker) RecoverIfNeeded(
 
 // AutoRewardRecovery checks for unclaimed settle amounts and attempts to recover rewards on startup
 func (c *RewardRecoveryChecker) AutoRewardRecovery() {
+	defer c.autoRecoveryRunning.Store(false)
+
 	logging.Info("[AutoRewardRecovery] Starting automatic reward recovery check", types.Claims)
 
 	// Get participant address

@@ -81,24 +81,25 @@ func (k msgServer) StartInference(goCtx context.Context, msg *types.MsgStartInfe
 }
 
 func (k msgServer) verifyKeys(ctx sdk.Context, msg *types.MsgStartInference, agent types.Participant, dev types.Participant) error {
-	components := getSignatureComponents(msg)
+	devComponents := getDevSignatureComponents(msg)
 
-	err := k.validateTimestamp(ctx, components, msg.InferenceId, 60)
-	if err != nil {
+	if err := k.validateTimestamp(ctx, devComponents, msg.InferenceId, 60); err != nil {
 		return err
 	}
-	// Create SignatureData with the necessary participants and signatures
-	sigData := calculations.SignatureData{
-		DevSignature:      msg.InferenceId, // Using InferenceId as the dev signature
-		TransferSignature: msg.TransferSignature,
-		Dev:               &dev,
-		TransferAgent:     &agent,
+
+	// Verify dev signature (original_prompt_hash)
+	if err := calculations.VerifyKeys(ctx, devComponents, calculations.SignatureData{
+		DevSignature: msg.InferenceId, Dev: &dev,
+	}, k); err != nil {
+		k.LogError("StartInference: dev signature failed", types.Inferences, "error", err)
+		return err
 	}
 
-	// Use the generic VerifyKeys function
-	err = calculations.VerifyKeys(ctx, components, sigData, k)
-	if err != nil {
-		k.LogError("StartInference: verifyKeys failed", types.Inferences, "error", err)
+	// Verify TA signature (prompt_hash)
+	if err := calculations.VerifyKeys(ctx, getTASignatureComponents(msg), calculations.SignatureData{
+		TransferSignature: msg.TransferSignature, TransferAgent: &agent,
+	}, k); err != nil {
+		k.LogError("StartInference: TA signature failed", types.Inferences, "error", err)
 		return err
 	}
 
@@ -192,9 +193,22 @@ func (k msgServer) processInferencePayments(
 
 }
 
-func getSignatureComponents(msg *types.MsgStartInference) calculations.SignatureComponents {
+// getDevSignatureComponents returns components for dev signature verification
+// Dev signs: original_prompt_hash + timestamp + ta_address (no executor)
+func getDevSignatureComponents(msg *types.MsgStartInference) calculations.SignatureComponents {
 	return calculations.SignatureComponents{
-		Payload:         msg.OriginalPrompt,
+		Payload:         msg.OriginalPromptHash,
+		Timestamp:       msg.RequestTimestamp,
+		TransferAddress: msg.Creator,
+		ExecutorAddress: "", // Dev doesn't include executor address
+	}
+}
+
+// getTASignatureComponents returns components for TA signature verification
+// TA signs: prompt_hash + timestamp + ta_address + executor_address
+func getTASignatureComponents(msg *types.MsgStartInference) calculations.SignatureComponents {
+	return calculations.SignatureComponents{
+		Payload:         msg.PromptHash,
 		Timestamp:       msg.RequestTimestamp,
 		TransferAddress: msg.Creator,
 		ExecutorAddress: msg.AssignedTo,

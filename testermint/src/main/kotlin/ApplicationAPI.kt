@@ -341,6 +341,36 @@ data class ApplicationAPI(
         get(url, "v1/bls/epochs/$epochId")
     }
 
+    /**
+     * Stores payloads directly to the executor's PayloadStorage via admin endpoint.
+     * Used by InferenceTestHelper to support offchain payload validation tests.
+     *
+     * @param inferenceId The inference ID (will be URL-encoded)
+     * @param promptPayload The prompt payload to store
+     * @param responsePayload The response payload to store
+     * @param epochId The epoch ID for storage organization
+     * @return StorePayloadResponse with status
+     */
+    fun storePayload(
+        inferenceId: String,
+        promptPayload: String,
+        responsePayload: String,
+        epochId: Long
+    ): StorePayloadResponse = wrapLog("StorePayload", true) {
+        val url = urlFor(SERVER_TYPE_ADMIN)
+        val encodedInferenceId = URLEncoder.encode(inferenceId, "UTF-8")
+        val request = StorePayloadRequest(
+            promptPayload = promptPayload,
+            responsePayload = responsePayload,
+            epochId = epochId
+        )
+        val response = Fuel.post("$url/admin/v1/payloads/$encodedInferenceId")
+            .jsonBody(request, cosmosJson)
+            .responseObject<StorePayloadResponse>(gsonDeserializer(cosmosJson))
+        logResponse(response)
+        response.third.get()
+    }
+
     inline fun <reified Out : Any> get(url: String, path: String): Out {
         val response = Fuel.get("$url/$path")
             .responseString()

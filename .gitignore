@@ -36,3 +36,5 @@ balances-*.json
 .parallel-test-temp/
 testermint/parallel-test-results/
 run-parallel-tests/
+**/node_modules/
+**/target/

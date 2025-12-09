@@ -190,6 +190,23 @@ func registerNodeAndSetInferenceStatus(t *testing.T, broker *Broker, node apicon
 	// Wait for InferenceUpAllCommand to complete
 	<-inferenceUpCommand.Response
 
+	// Wait for reconciliation to actually bring the node to INFERENCE status
+	// by polling until the mock client's InferenceUp has been called
+	mockFactory := broker.mlNodeClientFactory.(*mlnodeclient.MockClientFactory)
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		allClients := mockFactory.GetAllClients()
+		for _, client := range allClients {
+			if client.InferenceUpCalled > 0 {
+				// InferenceUp was called, wait a bit for status to propagate
+				time.Sleep(50 * time.Millisecond)
+				return
+			}
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	// Fallback: manually set status if reconciliation didn't complete in time
 	setStatusCommand := NewSetNodesActualStatusCommand(
 		[]StatusUpdate{
 			{
@@ -201,7 +218,6 @@ func registerNodeAndSetInferenceStatus(t *testing.T, broker *Broker, node apicon
 		},
 	)
 	queueMessage(t, broker, setStatusCommand)
-
 	<-setStatusCommand.Response
 
 	time.Sleep(50 * time.Millisecond)

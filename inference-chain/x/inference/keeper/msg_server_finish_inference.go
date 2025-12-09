@@ -96,38 +96,87 @@ func (k msgServer) FinishInference(goCtx context.Context, msg *types.MsgFinishIn
 }
 
 func (k msgServer) verifyFinishKeys(ctx sdk.Context, msg *types.MsgFinishInference, transferAgent *types.Participant, requestor *types.Participant, executor *types.Participant) error {
-	components := getFinishSignatureComponents(msg)
-	// The extra seconds here need to be high enough to account for a very long inference.
-	// Remember, deduping (via inferenceId) is our first defense against replay attacks, this is only
-	// to make sure there are no replays from pruned inferences.
-	err := k.validateTimestamp(ctx, components, msg.InferenceId, 60*60)
-	if err != nil {
+	// Hash-based signature verification (post-upgrade flow)
+	// Dev signs: original_prompt_hash + timestamp + ta_address
+	// TA signs: prompt_hash + timestamp + ta_address + executor_address
+	// Executor signs: prompt_hash + timestamp + ta_address + executor_address
+	devComponents := getFinishDevSignatureComponents(msg)
+	taComponents := getFinishTASignatureComponents(msg)
+
+	// Extra seconds for long-running inferences; deduping via inferenceId is primary replay defense
+	if err := k.validateTimestamp(ctx, devComponents, msg.InferenceId, 60*60); err != nil {
 		return err
 	}
 
-	// Create SignatureData with the necessary participants and signatures
-	sigData := calculations.SignatureData{
-		DevSignature:      msg.InferenceId,
-		TransferSignature: msg.TransferSignature,
-		ExecutorSignature: msg.ExecutorSignature,
-		Dev:               requestor,
-		TransferAgent:     transferAgent,
-		Executor:          executor,
+	// Verify dev signature (original_prompt_hash)
+	if err := calculations.VerifyKeys(ctx, devComponents, calculations.SignatureData{
+		DevSignature: msg.InferenceId, Dev: requestor,
+	}, k); err != nil {
+		k.LogError("FinishInference: dev signature failed", types.Inferences, "error", err)
+		return err
 	}
 
-	// Use the generic VerifyKeys function
-	err = calculations.VerifyKeys(ctx, components, sigData, k)
-	if err != nil {
-		k.LogError("FinishInference: verifyKeys failed", types.Inferences, "error", err)
+	// Verify TA signature (prompt_hash)
+	if err := k.verifyTASignature(ctx, msg, taComponents, transferAgent); err != nil {
+		return err
+	}
+
+	// Verify Executor signature (prompt_hash)
+	if err := calculations.VerifyKeys(ctx, taComponents, calculations.SignatureData{
+		ExecutorSignature: msg.ExecutorSignature, Executor: executor,
+	}, k); err != nil {
+		k.LogError("FinishInference: Executor signature failed", types.Inferences, "error", err)
 		return err
 	}
 
 	return nil
 }
 
-func getFinishSignatureComponents(msg *types.MsgFinishInference) calculations.SignatureComponents {
+// verifyTASignature verifies TA signature using prompt_hash.
+// Includes upgrade-epoch fallback for inferences started before hash-based signing.
+func (k msgServer) verifyTASignature(ctx sdk.Context, msg *types.MsgFinishInference, taComponents calculations.SignatureComponents, transferAgent *types.Participant) error {
+	err := calculations.VerifyKeys(ctx, taComponents, calculations.SignatureData{
+		TransferSignature: msg.TransferSignature, TransferAgent: transferAgent,
+	}, k)
+	if err == nil {
+		return nil
+	}
+
+	// Upgrade-epoch fallback: inferences started before hash-based signing use original_prompt_hash
+	// This path will be removed after upgrade epoch completes
+	directComponents := calculations.SignatureComponents{
+		Payload:         msg.OriginalPromptHash,
+		Timestamp:       msg.RequestTimestamp,
+		TransferAddress: msg.TransferredBy,
+		ExecutorAddress: msg.ExecutedBy,
+	}
+	if fallbackErr := calculations.VerifyKeys(ctx, directComponents, calculations.SignatureData{
+		TransferSignature: msg.TransferSignature, TransferAgent: transferAgent,
+	}, k); fallbackErr != nil {
+		k.LogError("FinishInference: TA signature failed", types.Inferences, "promptHashErr", err, "fallbackErr", fallbackErr)
+		return err
+	}
+
+	k.LogDebug("FinishInference: Using upgrade-epoch fallback for TA signature", types.Inferences, "inferenceId", msg.InferenceId)
+	return nil
+}
+
+// getFinishDevSignatureComponents returns components for dev signature verification
+// Dev signs: original_prompt_hash + timestamp + ta_address (no executor)
+func getFinishDevSignatureComponents(msg *types.MsgFinishInference) calculations.SignatureComponents {
 	return calculations.SignatureComponents{
-		Payload:         msg.OriginalPrompt,
+		Payload:         msg.OriginalPromptHash,
+		Timestamp:       msg.RequestTimestamp,
+		TransferAddress: msg.TransferredBy,
+		ExecutorAddress: "", // Dev doesn't include executor address
+	}
+}
+
+// getFinishTASignatureComponents returns components for TA/Executor signature verification
+// TA/Executor sign: prompt_hash + timestamp + ta_address + executor_address
+func getFinishTASignatureComponents(msg *types.MsgFinishInference) calculations.SignatureComponents {
+	return calculations.SignatureComponents{
+		Payload:         msg.PromptHash,
 		Timestamp:       msg.RequestTimestamp,
 		TransferAddress: msg.TransferredBy,
 		ExecutorAddress: msg.ExecutedBy,
