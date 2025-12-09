@@ -182,7 +182,7 @@ class InferenceAccountingTests : TestermintTest() {
         logSection("Clearing Claims")
         genesis.waitForStage(EpochStage.CLAIM_REWARDS)
         logSection("Making inferences")
-        genesis.waitForNextInferenceWindow()
+        genesis.waitForNextInferenceWindow(15)
         val startLastRewardedEpoch = getRewardCalculationEpochIndex(genesis)
         val participants = genesis.api.getParticipants()
         participants.forEach {
