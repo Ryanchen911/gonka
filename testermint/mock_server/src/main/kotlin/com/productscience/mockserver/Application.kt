@@ -4,16 +4,17 @@ import com.productscience.mockserver.routes.fileRoutes
 import com.productscience.mockserver.routes.healthRoutes
 import com.productscience.mockserver.routes.inferenceRoutes
 import com.productscience.mockserver.routes.powRoutes
-import com.productscience.mockserver.routes.powV2Routes
 import com.productscience.mockserver.routes.responseRoutes
 import com.productscience.mockserver.routes.stateRoutes
 import com.productscience.mockserver.routes.stopRoutes
 import com.productscience.mockserver.routes.tokenizationRoutes
 import com.productscience.mockserver.routes.trainRoutes
+import com.productscience.mockserver.routes.authRoutes
 import com.productscience.mockserver.service.ResponseService
 import com.productscience.mockserver.service.HostHeaderService
 import com.productscience.mockserver.service.TokenizationService
 import com.productscience.mockserver.service.WebhookService
+import com.productscience.mockserver.service.AuthTokenService
 import io.ktor.serialization.jackson.jackson
 import io.ktor.server.engine.embeddedServer
 import io.ktor.server.netty.Netty
@@ -35,6 +36,7 @@ val WebhookServiceKey = AttributeKey<WebhookService>("WebhookService")
 val ResponseServiceKey = AttributeKey<ResponseService>("ResponseService")
 val TokenizationServiceKey = AttributeKey<TokenizationService>("TokenizationService")
 val HostHeaderServiceKey = AttributeKey<HostHeaderService>("HostHeaderService")
+val AuthTokenServiceKey = AttributeKey<AuthTokenService>("AuthTokenService")
 
 fun main() {
     embeddedServer(Netty, port = 8080, host = "0.0.0.0", module = Application::module)
@@ -68,12 +70,14 @@ fun Application.configureServices() {
     val webhookService = WebhookService(responseService)
     val tokenizationService = TokenizationService()
     val hostHeaderService = HostHeaderService()
+    val authTokenService = AuthTokenService()
 
     // Register the services in the application's attributes
     attributes.put(WebhookServiceKey, webhookService)
     attributes.put(ResponseServiceKey, responseService)
     attributes.put(TokenizationServiceKey, tokenizationService)
     attributes.put(HostHeaderServiceKey, hostHeaderService)
+    attributes.put(AuthTokenServiceKey, authTokenService)
 }
 
 val HostHeaderRecorder = createApplicationPlugin(name = "HostHeaderRecorder") {
@@ -91,6 +95,7 @@ fun Application.configureRouting() {
     val webhookService = attributes[WebhookServiceKey]
     val responseService = attributes[ResponseServiceKey]
     val tokenizationService = attributes[TokenizationServiceKey]
+    val authTokenService = attributes[AuthTokenServiceKey]
 
     routing {
         // Server status endpoint
@@ -107,14 +112,14 @@ fun Application.configureRouting() {
         // Register all the route handlers
         stateRoutes()
         powRoutes(webhookService)
-        powV2Routes(webhookService)  // PoC v2 (artifact-based) routes
-        inferenceRoutes(responseService)
+        inferenceRoutes(responseService, authTokenService)
         trainRoutes()
         stopRoutes()
         healthRoutes()
         responseRoutes(responseService)
         tokenizationRoutes(tokenizationService)
         fileRoutes() // Route for serving files
+        authRoutes(authTokenService) // Route for auth token management
     }
 }
 
