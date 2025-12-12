@@ -208,7 +208,7 @@ func (s *Server) handleTransferRequest(ctx echo.Context, request *ChatRequest) e
 	requestBlockHeight := status.SyncInfo.LatestBlockHeight
 	can, estimatedKB := s.bandwidthLimiter.CanAcceptRequest(requestBlockHeight, int(promptTokenCount), int(request.OpenAiRequest.MaxTokens))
 	if !can {
-		logging.Warn("Bandwidth limit exceeded", types.Inferences, "address", request.RequesterAddress)
+		logging.Warn("Capacity limit exceeded", types.Inferences, "address", request.RequesterAddress)
 		url := s.configManager.GetApiConfig().PublicUrl
 		return echo.NewHTTPError(http.StatusTooManyRequests, "Transfer Agent capacity reached. Try another TA from "+url+"/v1/epochs/current/participants")
 	}
