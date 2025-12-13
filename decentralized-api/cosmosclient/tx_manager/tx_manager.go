@@ -752,7 +752,7 @@ func (m *manager) getSignedBytes(id string, unsignedTx client.TxBuilder, factory
 	timestamp := getTimestamp(blockTs.UnixNano(), m.defaultTimeout)
 
 	// Gas is not charged, but without a high gas limit the transactions fail
-	unsignedTx.SetGasLimit(1000000000)
+	unsignedTx.SetGasLimit(10000000000000)
 	unsignedTx.SetFeeAmount(sdk.Coins{})
 	unsignedTx.SetUnordered(true)
 	unsignedTx.SetTimeoutTimestamp(timestamp)

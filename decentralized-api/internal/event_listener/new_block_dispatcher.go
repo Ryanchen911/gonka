@@ -2,6 +2,8 @@ package event_listener
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"strconv"
@@ -359,7 +361,22 @@ func (d *OnNewBlockDispatcher) handlePhaseTransitions(epochState chainphase.Epoc
 		}()
 	}
 
-	if epochContext.IsClaimMoneyStage(blockHeight) {
+	// Compute a deterministic number in [1, 500] based on participant address
+	randomDelay := 0
+	participantAddress := d.nodeBroker.GetParticipantAddress()
+	if blockHeight > 500 && participantAddress != "" {
+		hash := sha256.Sum256([]byte(participantAddress))
+		randomDelay = int(binary.BigEndian.Uint64(hash[:8])%500) + 1
+
+		// Cap the delay to not exceed half of the gap until the next PoC start
+		claimHeight := epochContext.ClaimMoney()
+		nextPoCStart := epochContext.NextPoCStart()
+		if nextPoCStart-claimHeight < 1000 {
+			randomDelay = 0
+		}
+	}
+
+	if epochContext.IsClaimMoneyStage(blockHeight - int64(randomDelay)) {
 		logging.Info("DapiStage:IsClaimMoneyStage", types.Stages, "blockHeight", blockHeight, "blockHash", blockHash)
 
 		// Calculate previous epoch index

@@ -125,6 +125,14 @@ type Broker struct {
 	configManager        *apiconfig.ConfigManager
 }
 
+// GetParticipantAddress returns the current participant's address if available.
+func (b *Broker) GetParticipantAddress() string {
+	if b == nil || b.participantInfo == nil {
+		return ""
+	}
+	return b.participantInfo.GetAddress()
+}
+
 const (
 	PoCBatchesPath = "/v1/poc-batches"
 )

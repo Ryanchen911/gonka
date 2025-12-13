@@ -1,7 +1,7 @@
-#!/bin/bash
+#!/bin/sh
 set -e
 
-PROJECT_NAME="wrapped-token"
+PROJECT_NAME="community_sale"
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
 
 echo "🔨 Building $PROJECT_NAME contract..."
@@ -14,6 +14,6 @@ docker run --rm \
     -v "$SCRIPT_DIR":/code \
     --mount type=volume,source="${PROJECT_NAME}_cache",target=/code/target \
     --mount type=volume,source=registry_cache,target=/usr/local/cargo/registry \
-    cosmwasm/rust-optimizer:0.17.0 > /dev/null 2>&1
+    cosmwasm/optimizer:0.16.1
 
-echo "✅ Build complete: artifacts/${PROJECT_NAME}.wasm"
+echo "✅ Build complete: artifacts/${PROJECT_NAME}.wasm" 

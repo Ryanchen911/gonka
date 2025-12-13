@@ -16,7 +16,7 @@ import (
 )
 
 const waitTimeBlocksFromLaunch = 60
-const waitBetweenAttempts = 100
+const waitBetweenAttempts = 1000
 
 func NewRewardRecoveryChecker(
 	phaseTracker *chainphase.ChainPhaseTracker,
@@ -73,6 +73,13 @@ func (c *RewardRecoveryChecker) RecoverIfNeeded(
 		logging.Debug("[AutoRewardRecovery] Inference validation cutoff reached", types.Claims,
 			"currentBlockHeight", currentBlockHeight,
 			"inferenceValidationCutoff", inferenceValidationCutoff)
+		return
+	}
+
+	if currentBlockHeight < (latestEpoch.ClaimMoney() + waitBetweenAttempts) {
+		logging.Debug("[AutoRewardRecovery] Waiting for claim money", types.Claims,
+			"currentBlockHeight", currentBlockHeight,
+			"claimMoney", latestEpoch.ClaimMoney())
 		return
 	}
 
