@@ -79,6 +79,7 @@ func setNewPocParams(ctx context.Context, k keeper.Keeper) error {
 	params.PocParams.ModelParams.RTarget = types.DecimalFromFloat(1.398077)
 
 	params.ValidationParams.ExpirationBlocks = 150
+	params.ValidationParams.BinomTestP0 = types.DecimalFromFloat(0.40)
 
 	params.BandwidthLimitsParams.MaxInferencesPerBlock = 100
 

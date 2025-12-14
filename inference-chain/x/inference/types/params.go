@@ -134,6 +134,7 @@ func DefaultValidationParams() *ValidationParams {
 		DowntimeHThreshold:             DecimalFromFloat(4),
 		DowntimeReputationPreserve:     DecimalFromFloat(0.0),
 		QuickFailureThreshold:          DecimalFromFloat(0.000001),
+		BinomTestP0:                    DecimalFromFloat(0.10),
 	}
 }
 
@@ -402,6 +403,9 @@ func (p *ValidationParams) Validate() error {
 	}
 	if p.DowntimeReputationPreserve == nil {
 		return fmt.Errorf("downtime reputation preserve cannot be nil")
+	}
+	if p.BinomTestP0 == nil {
+		return fmt.Errorf("binom test p0 cannot be nil")
 	}
 	// Validate timestamp parameters
 	if p.TimestampExpiration <= 0 {
