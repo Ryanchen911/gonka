@@ -171,9 +171,11 @@ func main() {
 
 	// Shared payload storage for both public and admin servers
 	// Uses PostgreSQL if PGHOST is set and accessible, otherwise file-based
-	payloadStore := payloadstorage.NewCachedStorage(
+	// ManagedStorage provides read caching + automatic epoch pruning (retains last 3 epochs)
+	payloadStore := payloadstorage.NewManagedStorage(
 		payloadstorage.NewPayloadStorage(ctx, "/root/.dapi/data/inference"),
-		3*time.Minute,
+		3,             // retain current + 2 previous epochs
+		3*time.Minute, // cache TTL
 	)
 
 	publicServer := pserver.NewServer(nodeBroker, config, recorder, trainingExecutor, blockQueue, chainPhaseTracker, payloadStore)

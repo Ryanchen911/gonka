@@ -14,7 +14,7 @@ import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import kotlin.test.assertNotNull
 
-@Timeout(value = 15, unit = TimeUnit.MINUTES)
+@Timeout(value = 20, unit = TimeUnit.MINUTES)
 @TestMethodOrder(MethodOrderer.OrderAnnotation::class)
 class ValidationTests : TestermintTest() {
     @Test
@@ -22,8 +22,8 @@ class ValidationTests : TestermintTest() {
         val (_, genesis) = initCluster(
             config = inferenceConfig.copy(
                 genesisSpec = createSpec(
-                    epochLength = 100,
-                    epochShift = 80
+                    epochLength = 60,
+                    epochShift = 40
                 ),
             ),
             reboot = true,

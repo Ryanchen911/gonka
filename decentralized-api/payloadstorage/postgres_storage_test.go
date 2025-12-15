@@ -223,7 +223,7 @@ func TestHybridStorage_FallbackOnPGError(t *testing.T) {
 	require.NoError(t, err)
 	defer pgStorage.Close()
 
-	hybrid := NewHybridStorage(pgStorage, fileStorage)
+	hybrid := NewHybridStorage(pgStorage, fileStorage, 240*time.Second)
 
 	// Data not in PG, but is in file - should find it
 	prompt, response, err := hybrid.Retrieve(ctx, "inf-001", 100)
@@ -245,7 +245,7 @@ func TestHybridStorage_PGPrimary(t *testing.T) {
 	defer pgStorage.Close()
 
 	fileStorage := NewFileStorage(tempDir)
-	hybrid := NewHybridStorage(pgStorage, fileStorage)
+	hybrid := NewHybridStorage(pgStorage, fileStorage, 240*time.Second)
 
 	// Store via hybrid (should go to PG)
 	storedPrompt := []byte(`{"pg": "data"}`)
