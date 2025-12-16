@@ -24,33 +24,29 @@ var (
 	upgradeV024Bounties = []BountyReward{
 		// AnzeKovac, review
 		// weight = 6549
-		{"gonka1ktl3kkn9l68c9amanu8u4868mcjmtsr5tgzmjk", 1141194807206},
+		{"gonka1ktl3kkn9l68c9amanu8u4868mcjmtsr5tgzmjk", 1451927577288},
 
 		// scuwan, review
 		// weight = 11856
-		{"gonka1d7p03cu2y2yt3vytq9wlfm6tlz0lfhlgv9h82p", 2065965129675},
+		{"gonka1d7p03cu2y2yt3vytq9wlfm6tlz0lfhlgv9h82p", 2628501046927},
 		// weight = 14093
-		{"gonka1p2lhgng7tcqju7emk989s5fpdr7k2c3ek6h26m", 2455773158949},
+		{"gonka1p2lhgng7tcqju7emk989s5fpdr7k2c3ek6h26m", 3124448823747},
 		// weight = 5556
-		{"gonka1vhprg9epy683xghp8ddtdlw2y9cycecmm64tje", 968159772307},
+		{"gonka1vhprg9epy683xghp8ddtdlw2y9cycecmm64tje", 1231777312477},
 		// weight = 310
-		{"gonka15p7s7w2hx0y8095lddd4ummm2y0kwpwljk00aq", 54018993775},
+		{"gonka15p7s7w2hx0y8095lddd4ummm2y0kwpwljk00aq", 68727675822},
 
 		// blizko, review + potential issue
 		// weight = 13370
-		{"gonka12jaf7m4eysyqt32mrgarum6z96vt55tckvcleq", 5329786925080},
+		{"gonka12jaf7m4eysyqt32mrgarum6z96vt55tckvcleq", 5964158147555},
 
 		// iamoeco
 		// weight = 27320
-		{"gonka1d9cewcmhq4ez9xgld54qgee06fhk3qy4tqza88", 4760641644965},
-
-		// andrei-novoselov
-		// weight = 22107
-		{"gonka1llxvtg0657ldmqn4l3t0ag496ff355j5kawagy", 3852251275448},
+		{"gonka1d9cewcmhq4ez9xgld54qgee06fhk3qy4tqza88", 6056903559552},
 
 		// Pawel-TU
 		// weight = 2136
-		{"gonka19e5cl3ukk9yjmeza53eapnhwqqytelh77sq6gv", 372208292593},
+		{"gonka19e5cl3ukk9yjmeza53eapnhwqqytelh77sq6gv", 473555856633},
 
 		// PR Authors (reduced)
 		{"gonka18lluv53n4h9z34qu20vxcvypgdkhsg6nn2cl2d", 3000000000000},
@@ -62,29 +58,25 @@ var (
 	upgradeV025Bounties = []BountyReward{
 		// AnzeKovac
 		// weight = 6523
-		{"gonka1ktl3kkn9l68c9amanu8u4868mcjmtsr5tgzmjk", 972500189811},
+		{"gonka1ktl3kkn9l68c9amanu8u4868mcjmtsr5tgzmjk", 1181663256064},
 
 		// Pegasus-starry
 		// weight = 3098
-		{"gonka1d7p03cu2y2yt3vytq9wlfm6tlz0lfhlgv9h82p", 461874227815},
+		{"gonka1d7p03cu2y2yt3vytq9wlfm6tlz0lfhlgv9h82p", 561213056459},
 		// weight = 3107
-		{"gonka1p2lhgng7tcqju7emk989s5fpdr7k2c3ek6h26m", 463216018664},
+		{"gonka1p2lhgng7tcqju7emk989s5fpdr7k2c3ek6h26m", 562843436546},
 		// weight = 12427
-		{"gonka1vhprg9epy683xghp8ddtdlw2y9cycecmm64tje", 1852714986782},
+		{"gonka1vhprg9epy683xghp8ddtdlw2y9cycecmm64tje", 2251192592841},
 		// weight = 357
-		{"gonka15p7s7w2hx0y8095lddd4ummm2y0kwpwljk00aq", 53224370345},
+		{"gonka15p7s7w2hx0y8095lddd4ummm2y0kwpwljk00aq", 64671743433},
 
 		// blizko
 		// weight = 27191
-		{"gonka12jaf7m4eysyqt32mrgarum6z96vt55tckvcleq", 4053848330699},
+		{"gonka12jaf7m4eysyqt32mrgarum6z96vt55tckvcleq", 4925740548157},
 
 		// iamoeco
 		// weight = 36964 + 4225 + 25344
-		{"gonka1d9cewcmhq4ez9xgld54qgee06fhk3qy4tqza88", 9919263395476},
-
-		// andrei-novoselov
-		// weight = gonka1llxvtg0657ldmqn4l3t0ag496ff355j5kawagy
-		{"gonka1llxvtg0657ldmqn4l3t0ag496ff355j5kawagy", 3823358480408},
+		{"gonka1d9cewcmhq4ez9xgld54qgee06fhk3qy4tqza88", 12052675366500},
 
 		// PR Authors (reduced)
 		{"gonka18lluv53n4h9z34qu20vxcvypgdkhsg6nn2cl2d", 2400000000000},
