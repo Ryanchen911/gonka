@@ -28,13 +28,16 @@ It's recommended to deploy PostgreSQL on a separate machine or at least point it
 - `POSTGRES_PASSWORD` (required)
 - `POSTGRES_USER` (default: `payloads`)
 - `POSTGRES_DB` (default: `payloads`)
+- `POSTGRES_MIN_WAL_SIZE` (default: `4GB`)
+- `POSTGRES_MAX_WAL_SIZE` (default: `16GB`)
+- `POSTGRES_CHECKPOINT_TIMEOUT` (default: `15min`)
 
 **Environment variables for API to connect to PostgreSQL** (`docker-compose.yml`):
-- `PGHOST` - PostgreSQL host address (if not set, file storage is used)
-- `PGPASSWORD` - PostgreSQL password
-- `PGPORT` (default: `5432`)
-- `PGUSER` (default: `payloads`)
-- `PGDATABASE` (default: `payloads`)
+- `POSTGRES_HOST` - PostgreSQL host address (if not set, file storage is used)
+- `POSTGRES_PASSWORD` - PostgreSQL password
+- `POSTGRES_PORT` (default: `5432`)
+- `POSTGRES_USER` (default: `payloads`)
+- `POSTGRES_DB` (default: `payloads`)
 
 Start after upgrade:
 ```
@@ -131,3 +134,30 @@ Adds `EpochPerformanceSummaryAll` query endpoint.
 Commit: [fae7d20a5](https://github.com/gonka-ai/gonka/commit/fae7d20a5)
 
 Limits PoC batch queue per GPU to prevent one GPU from accumulating all batches. Ensures even distribution across multiple GPUs.
+
+---
+
+### ClaimReward Performance
+
+Commits: [19755e70d](https://github.com/gonka-ai/gonka/commit/19755e70d), [933eeb296](https://github.com/gonka-ai/gonka/commit/933eeb296), [8df8a1cf9](https://github.com/gonka-ai/gonka/commit/8df8a1cf9)
+
+Optimizes ClaimReward transaction processing with reservoir sampling, debouncing, and ShouldValidate improvements. Reduces processing time from 1.6s to ~20ms for 1M inferences (~80x speedup). ShouldValidate call optimized from 2800ns to 1030ns (2.7x speedup).
+
+---
+
+### PoC Confirmation Weight Fix [Bounty Bug]
+
+Commit: [b44d51e0c](https://github.com/gonka-ai/gonka/commit/b44d51e0c)
+
+Fixes bug where PoC miners who didn't submit batches during Confirmation PoC incorrectly kept their confirmation weight. Now sets ConfirmationWeight to 0 for participants who didn't submit batches and have weight to confirm.
+
+Found by: maksimenkoff  
+Proposed Reward: 20,000 GNK
+
+---
+
+### Upgrade Rewards Distribution
+
+Commit: [676f5e620](https://github.com/gonka-ai/gonka/commit/676f5e620)
+
+Upgrade handler includes reward distribution for previous upgrades v0.2.4 and v0.2.5. Rewards are distributed to PR reviewers proportionally to node weight and contributions. Details in [upgrades.go](https://github.com/gonka-ai/gonka/blob/gm/dev-0.2.6/inference-chain/app/upgrades/v0_2_6/upgrades.go).
