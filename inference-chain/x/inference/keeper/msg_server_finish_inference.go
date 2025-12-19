@@ -18,32 +18,32 @@ func (k msgServer) FinishInference(goCtx context.Context, msg *types.MsgFinishIn
 	executor, found := k.GetParticipant(ctx, msg.ExecutedBy)
 	if !found {
 		k.LogError("FinishInference: executor not found", types.Inferences, "executed_by", msg.ExecutedBy)
-		return nil, sdkerrors.Wrap(types.ErrParticipantNotFound, msg.ExecutedBy)
+		return failedFinish(ctx, sdkerrors.Wrap(types.ErrParticipantNotFound, msg.ExecutedBy), msg), nil
 	}
 
 	requestor, found := k.GetParticipant(ctx, msg.RequestedBy)
 	if !found {
 		k.LogError("FinishInference: requestor not found", types.Inferences, "requested_by", msg.RequestedBy)
-		return nil, sdkerrors.Wrap(types.ErrParticipantNotFound, msg.RequestedBy)
+		return failedFinish(ctx, sdkerrors.Wrap(types.ErrParticipantNotFound, msg.RequestedBy), msg), nil
 	}
 
 	transferAgent, found := k.GetParticipant(ctx, msg.TransferredBy)
 	if !found {
 		k.LogError("FinishInference: transfer agent not found", types.Inferences, "transferred_by", msg.TransferredBy)
-		return nil, sdkerrors.Wrap(types.ErrParticipantNotFound, msg.TransferredBy)
+		return failedFinish(ctx, sdkerrors.Wrap(types.ErrParticipantNotFound, msg.TransferredBy), msg), nil
 	}
 
 	err := k.verifyFinishKeys(ctx, msg, &transferAgent, &requestor, &executor)
 	if err != nil {
 		k.LogError("FinishInference: verifyKeys failed", types.Inferences, "error", err)
-		return nil, sdkerrors.Wrap(types.ErrInvalidSignature, err.Error())
+		return failedFinish(ctx, sdkerrors.Wrap(types.ErrInvalidSignature, err.Error()), msg), nil
 	}
 
 	existingInference, found := k.GetInference(ctx, msg.InferenceId)
 
 	if found && existingInference.FinishedProcessed() {
 		k.LogError("FinishInference: inference already finished", types.Inferences, "inferenceId", msg.InferenceId)
-		return nil, sdkerrors.Wrap(types.ErrInferenceFinishProcessed, "inference has already finished processed")
+		return failedFinish(ctx, sdkerrors.Wrap(types.ErrInferenceFinishProcessed, "inference has already finished processed"), msg), nil
 	}
 
 	if found && existingInference.Status == types.InferenceStatus_EXPIRED {
@@ -51,7 +51,7 @@ func (k msgServer) FinishInference(goCtx context.Context, msg *types.MsgFinishIn
 			"inferenceId", msg.InferenceId,
 			"currentStatus", existingInference.Status,
 			"executedBy", msg.ExecutedBy)
-		return nil, sdkerrors.Wrap(types.ErrInferenceExpired, "inference has already expired")
+		return failedFinish(ctx, sdkerrors.Wrap(types.ErrInferenceExpired, "inference has already expired"), msg), nil
 	}
 
 	// Record the current price only if this is the first message (StartInference not processed yet)
@@ -79,20 +79,30 @@ func (k msgServer) FinishInference(goCtx context.Context, msg *types.MsgFinishIn
 
 	finalInference, err := k.processInferencePayments(ctx, inference, payments)
 	if err != nil {
-		return nil, err
+		return failedFinish(ctx, err, msg), nil
 	}
 	err = k.SetInference(ctx, *finalInference)
 	if err != nil {
-		return nil, err
+		return failedFinish(ctx, err, msg), nil
 	}
 	if existingInference.IsCompleted() {
 		err := k.handleInferenceCompleted(ctx, finalInference)
 		if err != nil {
-			return nil, err
+			return failedFinish(ctx, err, msg), nil
 		}
 	}
 
-	return &types.MsgFinishInferenceResponse{}, nil
+	return &types.MsgFinishInferenceResponse{InferenceIndex: msg.InferenceId}, nil
+}
+
+func failedFinish(ctx sdk.Context, err error, msg *types.MsgFinishInference) *types.MsgFinishInferenceResponse {
+	ctx.EventManager().EmitEvent(
+		sdk.NewEvent("finish_inference",
+			sdk.NewAttribute("result", "failed")))
+	return &types.MsgFinishInferenceResponse{
+		InferenceIndex: msg.InferenceId,
+		ErrorMessage:   err.Error(),
+	}
 }
 
 func (k msgServer) verifyFinishKeys(ctx sdk.Context, msg *types.MsgFinishInference, transferAgent *types.Participant, requestor *types.Participant, executor *types.Participant) error {
@@ -198,7 +208,10 @@ func (k msgServer) handleInferenceCompleted(ctx sdk.Context, existingInference *
 	} else {
 		executor.CurrentEpochStats.InferenceCount++
 		executor.LastInferenceTime = existingInference.EndBlockTimestamp
-		k.SetParticipant(ctx, executor)
+		if err := k.SetParticipant(ctx, executor); err != nil {
+			return err
+		}
+
 	}
 
 	effectiveEpoch, found := k.GetEffectiveEpoch(ctx)

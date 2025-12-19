@@ -18,11 +18,13 @@ func (k msgServer) StartInference(goCtx context.Context, msg *types.MsgStartInfe
 
 	transferAgent, found := k.GetParticipant(ctx, msg.Creator)
 	if !found {
-		return nil, sdkerrors.Wrap(types.ErrParticipantNotFound, msg.Creator)
+		k.LogError("Creator not found", types.Inferences, "creator", msg.Creator, "msg", "StartInference")
+		return failedStart(ctx, sdkerrors.Wrap(types.ErrParticipantNotFound, msg.Creator), msg), nil
 	}
 	dev, found := k.GetParticipant(ctx, msg.RequestedBy)
 	if !found {
-		return nil, sdkerrors.Wrap(types.ErrParticipantNotFound, msg.RequestedBy)
+		k.LogError("RequestedBy not found", types.Inferences, "requestedBy", msg.RequestedBy, "msg", "StartInference")
+		return failedStart(ctx, sdkerrors.Wrap(types.ErrParticipantNotFound, msg.RequestedBy), msg), nil
 	}
 
 	k.LogInfo("DevPubKey", types.Inferences, "DevPubKey", dev.WorkerPublicKey, "DevAddress", dev.Address)
@@ -31,14 +33,14 @@ func (k msgServer) StartInference(goCtx context.Context, msg *types.MsgStartInfe
 	err := k.verifyKeys(ctx, msg, transferAgent, dev)
 	if err != nil {
 		k.LogError("StartInference: verifyKeys failed", types.Inferences, "error", err)
-		return nil, sdkerrors.Wrap(types.ErrInvalidSignature, err.Error())
+		return failedStart(ctx, sdkerrors.Wrap(types.ErrInvalidSignature, err.Error()), msg), nil
 	}
 
 	existingInference, found := k.GetInference(ctx, msg.InferenceId)
 
 	if found && existingInference.StartProcessed() {
 		k.LogError("StartInference: inference already started", types.Inferences, "inferenceId", msg.InferenceId)
-		return nil, sdkerrors.Wrap(types.ErrInferenceStartProcessed, "inference has already start processed")
+		return failedStart(ctx, sdkerrors.Wrap(types.ErrInferenceStartProcessed, "inference has already start processed"), msg), nil
 	}
 
 	// Record the current price only if this is the first message (FinishInference not processed yet)
@@ -55,29 +57,39 @@ func (k msgServer) StartInference(goCtx context.Context, msg *types.MsgStartInfe
 
 	inference, payments, err := calculations.ProcessStartInference(&existingInference, msg, blockContext, k)
 	if err != nil {
-		return nil, err
+		return failedStart(ctx, err, msg), nil
 	}
 
 	finalInference, err := k.processInferencePayments(ctx, inference, payments)
 	if err != nil {
-		return nil, err
+		return failedStart(ctx, err, msg), nil
 	}
 	err = k.SetInference(ctx, *finalInference)
 	if err != nil {
-		return nil, err
+		return failedStart(ctx, err, msg), nil
 	}
 	k.addTimeout(ctx, inference)
 
 	if inference.IsCompleted() {
 		err := k.handleInferenceCompleted(ctx, inference)
 		if err != nil {
-			return nil, err
+			return failedStart(ctx, err, msg), nil
 		}
 	}
 
 	return &types.MsgStartInferenceResponse{
 		InferenceIndex: msg.InferenceId,
 	}, nil
+}
+
+func failedStart(ctx sdk.Context, error error, message *types.MsgStartInference) *types.MsgStartInferenceResponse {
+	ctx.EventManager().EmitEvent(
+		sdk.NewEvent("start_inference",
+			sdk.NewAttribute("result", "failed")))
+	return &types.MsgStartInferenceResponse{
+		InferenceIndex: message.InferenceId,
+		ErrorMessage:   error.Error(),
+	}
 }
 
 func (k msgServer) verifyKeys(ctx sdk.Context, msg *types.MsgStartInference, agent types.Participant, dev types.Participant) error {

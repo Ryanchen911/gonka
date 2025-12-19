@@ -158,6 +158,11 @@ func (s *Server) postChat(ctx echo.Context) error {
 		return ErrRequestAuth
 	}
 
+	if chatRequest.OpenAiRequest.Model == "" {
+		logging.Warn("Request without model", types.Server, "path", ctx.Request().URL.Path)
+		return ErrNoModelSpecified
+	}
+
 	if chatRequest.InferenceId != "" && chatRequest.Seed != "" {
 		logging.Info("Executor request", types.Inferences, "inferenceId", chatRequest.InferenceId, "seed", chatRequest.Seed)
 		return s.handleExecutorRequest(ctx, chatRequest, ctx.Response().Writer)

@@ -143,7 +143,7 @@ func MustAddParticipant(t *testing.T, ms types.MsgServer, ctx context.Context, m
 
 func TestMsgServer_FinishInference_InferenceNotFound(t *testing.T) {
 	k, ms, ctx := setupMsgServer(t)
-	_, err := ms.FinishInference(ctx, &types.MsgFinishInference{
+	response, err := ms.FinishInference(ctx, &types.MsgFinishInference{
 		InferenceId:          "inferenceId",
 		ResponseHash:         "responseHash",
 		ResponsePayload:      "responsePayload",
@@ -151,7 +151,8 @@ func TestMsgServer_FinishInference_InferenceNotFound(t *testing.T) {
 		CompletionTokenCount: 1,
 		ExecutedBy:           testutil.Executor,
 	})
-	require.Error(t, err)
+	require.NoError(t, err)
+	require.NotEmpty(t, response.ErrorMessage)
 	_, found := k.GetInference(ctx, "inferenceId")
 	require.False(t, found)
 }

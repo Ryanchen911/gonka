@@ -97,6 +97,7 @@ message MsgStartInference {
 
 message MsgStartInferenceResponse {
   string inference_index = 1;
+  string error_message = 2;
 }
 
 message MsgFinishInference {
@@ -121,6 +122,7 @@ message MsgFinishInference {
 
 message MsgFinishInferenceResponse {
   string inference_index = 1;
+  string error_message = 2;
 }
 
 message MsgSubmitNewParticipant {
