@@ -30,6 +30,7 @@ type MockClient struct {
 	// Error injection
 	StopError             error
 	NodeStateError        error
+	SetNodeStateError     error
 	GetPowStatusError     error
 	InitGenerateError     error
 	InitValidateError     error
@@ -48,6 +49,7 @@ type MockClient struct {
 	// Call tracking
 	StopCalled             int
 	NodeStateCalled        int
+	SetNodeStateCalled     int
 	GetPowStatusCalled     int
 	InitGenerateCalled     int
 	InitValidateCalled     int
@@ -80,6 +82,8 @@ type MockClient struct {
 	LastModelStatusCheck *Model
 	LastModelDownload    *Model
 	LastModelDelete      *Model
+	LastSetNodeState     MLNodeState
+	LastSetNodeReason    string
 }
 
 // NewMockClient creates a new mock client with default values
@@ -127,6 +131,20 @@ func (m *MockClient) NodeState(ctx context.Context) (*StateResponse, error) {
 		return nil, m.NodeStateError
 	}
 	return &StateResponse{State: m.CurrentState}, nil
+}
+
+func (m *MockClient) SetNodeState(ctx context.Context, state MLNodeState, errorReason string) error {
+	m.Mu.Lock()
+	defer m.Mu.Unlock()
+	m.SetNodeStateCalled++
+	m.LastSetNodeState = state
+	m.LastSetNodeReason = errorReason
+
+	if m.SetNodeStateError != nil {
+		return m.SetNodeStateError
+	}
+	m.CurrentState = state
+	return nil
 }
 
 func (m *MockClient) GetPowStatus(ctx context.Context) (*PowStatusResponse, error) {

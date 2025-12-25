@@ -11,6 +11,7 @@ type MLNodeClient interface {
 	// Node state operations
 	Stop(ctx context.Context) error
 	NodeState(ctx context.Context) (*StateResponse, error)
+	SetNodeState(ctx context.Context, state MLNodeState, errorReason string) error
 
 	// PoC operations
 	GetPowStatus(ctx context.Context) (*PowStatusResponse, error)
