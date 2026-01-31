@@ -94,6 +94,10 @@ func (app *App) registerMigrations() {
 		return nil
 	})
 
+	app.Configurator().RegisterMigration(inferencetypes.ModuleName, 11, func(ctx sdk.Context) error {
+		return nil
+	})
+
 	app.Configurator().RegisterMigration(districutiontypes.ModuleName, 3, func(ctx sdk.Context) error {
 		return nil
 	})
