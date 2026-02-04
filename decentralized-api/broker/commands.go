@@ -50,6 +50,27 @@ func (c GetNodesCommand) Execute(b *Broker) {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
 
+	// Precompute timing information from current epoch state
+	var (
+		blocksUntilNextPoC  int64
+		secondsUntilNextPoC int64
+		currentPhase        types.EpochPhase
+		hasEpochInfo        bool
+	)
+	epochState := b.phaseTracker.GetCurrentEpochState()
+	if epochState != nil && epochState.IsSynced {
+		hasEpochInfo = true
+		currentPhase = epochState.CurrentPhase
+		currentHeight := epochState.CurrentBlock.Height
+		nextPoC := epochState.LatestEpoch.NextPoCStart()
+		blocksUntilNextPoC = nextPoC - currentHeight
+		if blocksUntilNextPoC < 0 {
+			blocksUntilNextPoC = 0
+		}
+		// Use default block time of 6 seconds
+		secondsUntilNextPoC = int64(float64(blocksUntilNextPoC) * 6.0)
+	}
+
 	nodeResponses := make([]NodeResponse, 0, len(b.nodes))
 	for _, nodeWithState := range b.nodes {
 		// --- Deep copy Node ---
@@ -99,6 +120,15 @@ func (c GetNodesCommand) Execute(b *Broker) {
 			Node:  nodeCopy,
 			State: stateCopy,
 		})
+		if hasEpochInfo {
+			shouldOnline := currentPhase == types.PoCGeneratePhase || currentPhase == types.PoCGenerateWindDownPhase || currentPhase == types.PoCValidatePhase || currentPhase == types.PoCValidateWindDownPhase || secondsUntilNextPoC <= 600
+			nodeResponses[len(nodeResponses)-1].State.Timing = &TimingInfo{
+				CurrentPhase:        string(currentPhase),
+				BlocksUntilNextPoC:  blocksUntilNextPoC,
+				SecondsUntilNextPoC: secondsUntilNextPoC,
+				ShouldBeOnline:      shouldOnline,
+			}
+		}
 	}
 	logging.Debug("Got nodes", types.Nodes, "size", len(nodeResponses))
 	c.Response <- nodeResponses
@@ -242,6 +272,9 @@ func (c UpdateNodeResultCommand) Execute(b *Broker) {
 		return
 	}
 
+	prevStatus := node.State.CurrentStatus
+	prevFailure := node.State.FailureReason
+
 	// Update state
 	logging.Info("Finalizing state transition for node", types.Nodes,
 		"node_id", c.NodeId,
@@ -260,6 +293,9 @@ func (c UpdateNodeResultCommand) Execute(b *Broker) {
 	} else {
 		// Clear failure reason on success
 		node.State.FailureReason = ""
+		if prevFailure != "" {
+			logging.Info("Node status recovered", types.Nodes, "node_id", c.NodeId, "blockHeight", blockHeight)
+		}
 	}
 
 	// Reset POC fields when moving away from POC status
@@ -268,5 +304,41 @@ func (c UpdateNodeResultCommand) Execute(b *Broker) {
 		node.State.PocCurrentStatus = PocStatusIdle
 	}
 
+	if prevStatus == types.HardwareNodeStatus_POC && c.Result.FinalStatus == types.HardwareNodeStatus_INFERENCE {
+		logging.Info("Onboarding transition POC->INFERENCE", types.Nodes, "node_id", c.NodeId, "blockHeight", blockHeight)
+	}
+
+	c.Response <- true
+}
+
+// SetNodeFailureReasonCommand sets the FailureReason field on a node state directly
+// without requiring an in-flight reconciliation.
+type SetNodeFailureReasonCommand struct {
+	NodeId   string
+	Reason   string
+	Response chan bool
+}
+
+func NewSetNodeFailureReasonCommand(nodeId string, reason string) SetNodeFailureReasonCommand {
+	return SetNodeFailureReasonCommand{
+		NodeId:   nodeId,
+		Reason:   reason,
+		Response: make(chan bool, 2),
+	}
+}
+
+func (c SetNodeFailureReasonCommand) GetResponseChannelCapacity() int { return cap(c.Response) }
+
+func (c SetNodeFailureReasonCommand) Execute(b *Broker) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	node, exists := b.nodes[c.NodeId]
+	if !exists {
+		logging.Warn("SetNodeFailureReason: node not found", types.Nodes, "node_id", c.NodeId)
+		c.Response <- false
+		return
+	}
+	node.State.FailureReason = c.Reason
 	c.Response <- true
 }

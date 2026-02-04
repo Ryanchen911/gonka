@@ -11,6 +11,7 @@ type MLNodeClient interface {
 	// Node state operations
 	Stop(ctx context.Context) error
 	NodeState(ctx context.Context) (*StateResponse, error)
+	SetNodeState(ctx context.Context, state MLNodeState, errorReason string) error
 
 	// PoC v1 operations (on-chain batches, requires Stop before transitions)
 	InitGenerateV1(ctx context.Context, dto InitDtoV1) error

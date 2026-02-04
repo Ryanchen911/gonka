@@ -17,6 +17,7 @@ import (
 	"decentralized-api/internal"
 	"decentralized-api/internal/event_listener/chainevents"
 	"decentralized-api/internal/seed"
+	"decentralized-api/internal/server/admin"
 	"decentralized-api/internal/validation"
 	"decentralized-api/logging"
 	"decentralized-api/poc"
@@ -336,6 +337,9 @@ func (d *OnNewBlockDispatcher) handlePhaseTransitions(epochState chainphase.Epoc
 	epochContext := epochState.LatestEpoch
 	blockHeight := epochState.CurrentBlock.Height
 	blockHash := epochState.CurrentBlock.Hash
+	tc := admin.NewTimingCalculator()
+	tr := tc.TimeUntilNextPoC(&epochState, 6.0)
+	sr := admin.NewStatusReporter()
 
 	// Sync broker node state with the latest epoch data at the start of a transition check
 	if err := d.nodeBroker.UpdateNodeWithEpochData(&epochState); err != nil {
@@ -346,6 +350,7 @@ func (d *OnNewBlockDispatcher) handlePhaseTransitions(epochState chainphase.Epoc
 	// Check for PoC start for the next epoch. This is the most important transition.
 	if epochContext.IsStartOfPocStage(blockHeight) {
 		logging.Info("DapiStage:IsStartOfPocStage: sending StartPoCEvent to the PoC orchestrator", types.Stages, "blockHeight", blockHeight, "blockHash", blockHash)
+		sr.LogTimingGuidance(tr.SecondsUntilNextPoC)
 		d.randomSeedManager.GenerateSeedInfo(epochContext.EpochIndex)
 		return
 	}
@@ -354,6 +359,7 @@ func (d *OnNewBlockDispatcher) handlePhaseTransitions(epochState chainphase.Epoc
 	if epochContext.IsEndOfPoCStage(blockHeight) {
 		logging.Info("DapiStage:IsEndOfPoCStage. Calling MoveToValidationStage", types.Stages,
 			"blockHeigh", blockHeight, "blockHash", blockHash)
+		sr.LogTimingGuidance(tr.SecondsUntilNextPoC)
 		command := broker.NewInitValidateCommand()
 		err := d.nodeBroker.QueueMessage(command)
 		if err != nil {
@@ -364,7 +370,10 @@ func (d *OnNewBlockDispatcher) handlePhaseTransitions(epochState chainphase.Epoc
 
 	if epochContext.IsStartOfPoCValidationStage(blockHeight) {
 		logging.Info("DapiStage:IsStartOfPoCValidationStage", types.Stages, "blockHeight", blockHeight, "blockHash", blockHash, "pocStartBlockHeight", epochContext.PocStartBlockHeight)
+
 		pocStartBlockHeight := epochContext.PocStartBlockHeight
+
+		sr.LogTimingGuidance(tr.SecondsUntilNextPoC)
 		go func() {
 			pocStartBlockHash, err := d.nodeBroker.GetChainBridge().GetBlockHash(pocStartBlockHeight)
 			if err != nil {
@@ -378,6 +387,7 @@ func (d *OnNewBlockDispatcher) handlePhaseTransitions(epochState chainphase.Epoc
 
 	if epochContext.IsEndOfPoCValidationStage(blockHeight) {
 		logging.Info("DapiStage:IsEndOfPoCValidationStage", types.Stages, "blockHeight", blockHeight, "blockHash", blockHash)
+		sr.LogTimingGuidance(tr.SecondsUntilNextPoC)
 		command := broker.NewInferenceUpAllCommand()
 		err := d.nodeBroker.QueueMessage(command)
 		if err != nil {
