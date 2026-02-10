@@ -6,19 +6,13 @@ import (
 	"decentralized-api/chainphase"
 	"decentralized-api/cosmosclient"
 	"decentralized-api/internal"
-	"decentralized-api/internal/authzcache"
 	"decentralized-api/internal/server/middleware"
 	"decentralized-api/payloadstorage"
-	"decentralized-api/poc/artifacts"
 	"decentralized-api/training"
 	"net/http"
-	"time"
 
 	"github.com/labstack/echo/v4"
-	echomw "github.com/labstack/echo/v4/middleware"
 )
-
-const httpClientTimeout = 5 * time.Minute
 
 type Server struct {
 	e                   *echo.Echo
@@ -32,21 +26,9 @@ type Server struct {
 	payloadStorage      payloadstorage.PayloadStorage
 	phaseTracker        *chainphase.ChainPhaseTracker
 	epochGroupDataCache *internal.EpochGroupDataCache
-	artifactStore       *artifacts.ManagedArtifactStore
-	authzCache          *authzcache.AuthzCache
-	httpClient          *http.Client
 }
 
-// ServerOption configures optional Server dependencies.
-type ServerOption func(*Server)
-
-// WithArtifactStore enables local artifact storage for off-chain PoC proofs.
-func WithArtifactStore(store *artifacts.ManagedArtifactStore) ServerOption {
-	return func(s *Server) {
-		s.artifactStore = store
-	}
-}
-
+// TODO: think about rate limits
 func NewServer(
 	nodeBroker *broker.Broker,
 	configManager *apiconfig.ConfigManager,
@@ -54,8 +36,7 @@ func NewServer(
 	trainingExecutor *training.Executor,
 	blockQueue *BridgeQueue,
 	phaseTracker *chainphase.ChainPhaseTracker,
-	payloadStorage payloadstorage.PayloadStorage,
-	opts ...ServerOption) *Server {
+	payloadStorage payloadstorage.PayloadStorage) *Server {
 	e := echo.New()
 	e.HTTPErrorHandler = middleware.TransparentErrorHandler
 
@@ -73,12 +54,6 @@ func NewServer(
 		payloadStorage:      payloadStorage,
 		phaseTracker:        phaseTracker,
 		epochGroupDataCache: internal.NewEpochGroupDataCache(recorder),
-		authzCache:          authzcache.NewAuthzCache(recorder),
-		httpClient:          NewNoRedirectClient(httpClientTimeout),
-	}
-
-	for _, opt := range opts {
-		opt(s)
 	}
 
 	s.bandwidthLimiter = internal.NewBandwidthLimiterFromConfig(configManager, recorder, phaseTracker)
@@ -132,19 +107,6 @@ func NewServer(
 	g.GET("restrictions/status", s.getRestrictionsStatus)
 	g.GET("restrictions/exemptions", s.getRestrictionsExemptions)
 	g.GET("restrictions/exemptions/:id/usage/:account", s.getRestrictionsExemptionUsage)
-
-	// PoC proofs endpoint with IP rate limiting (100 req/min per IP)
-	pocProofsRateLimiter := echomw.RateLimiter(echomw.NewRateLimiterMemoryStoreWithConfig(
-		echomw.RateLimiterMemoryStoreConfig{
-			Rate:      300.0 / 60.0, // 100 requests per minute
-			Burst:     30,
-			ExpiresIn: 3 * time.Minute,
-		},
-	))
-	g.POST("poc/proofs", s.postPocProofs, pocProofsRateLimiter)
-
-	// PoC artifact state endpoint (for testermint/validators to get real count and root_hash)
-	g.GET("poc/artifacts/state", s.getPocArtifactsState)
 
 	return s
 }
