@@ -227,24 +227,44 @@ func GetMlNodeUrl(elements MlNodePathElements) string {
 	return fmt.Sprintf("http://%s:%d/%s%s", elements.Host, elements.Port, strings.TrimSpace(elements.Version), elements.Segment)
 }
 
+func (n *Node) InferenceUrl() string {
+	return fmt.Sprintf("http://%s:%d%s", n.Host, n.InferencePort, n.InferenceSegment)
+}
+
 func (n *Node) InferenceUrlWithVersion(version string) string {
-	return GetMlNodeUrl(MlNodePathElements{
-		Host:    n.Host,
-		Port:    n.InferencePort,
-		BaseURL: n.BaseURL,
-		Version: version,
-		Segment: n.InferenceSegment,
-	})
+	v := strings.TrimSpace(version)
+	// If BaseURL is provided, build on top of it
+	if n.BaseURL != "" {
+		base := strings.TrimRight(n.BaseURL, "/")
+		if v == "" {
+			return fmt.Sprintf("%s%s", base, n.InferenceSegment)
+		}
+		return fmt.Sprintf("%s/%s%s", base, v, n.InferenceSegment)
+	}
+	if v == "" {
+		return n.InferenceUrl()
+	}
+	return fmt.Sprintf("http://%s:%d/%s%s", n.Host, n.InferencePort, v, n.InferenceSegment)
+}
+
+func (n *Node) PoCUrl() string {
+	return fmt.Sprintf("http://%s:%d%s", n.Host, n.PoCPort, n.PoCSegment)
 }
 
 func (n *Node) PoCUrlWithVersion(version string) string {
-	return GetMlNodeUrl(MlNodePathElements{
-		Host:    n.Host,
-		Port:    n.PoCPort,
-		BaseURL: n.BaseURL,
-		Version: version,
-		Segment: n.PoCSegment,
-	})
+	v := strings.TrimSpace(version)
+	// If BaseURL is provided, build on top of it
+	if n.BaseURL != "" {
+		base := strings.TrimRight(n.BaseURL, "/")
+		if v == "" {
+			return fmt.Sprintf("%s%s", base, n.PoCSegment)
+		}
+		return fmt.Sprintf("%s/%s%s", base, v, n.PoCSegment)
+	}
+	if v == "" {
+		return n.PoCUrl()
+	}
+	return fmt.Sprintf("http://%s:%d/%s%s", n.Host, n.PoCPort, v, n.PoCSegment)
 }
 
 // BaseUrlWithVersion constructs a base URL with version

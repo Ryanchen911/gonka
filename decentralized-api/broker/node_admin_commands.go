@@ -12,9 +12,56 @@ import (
 	"github.com/productscience/inference/x/inference/types"
 )
 
+// validateInferenceNode validates an InferenceNodeConfig and returns an error if invalid.
+// The error message describes what is wrong with the node configuration.
+// excludeNodeId is used when updating a node - it excludes that node from duplicate checks.
+// This method is exported so it can be called from admin handlers to provide clear error messages.
+func (b *Broker) validateInferenceNode(node apiconfig.InferenceNodeConfig, excludeNodeId string) error {
+	errors := apiconfig.ValidateInferenceNodeBasic(node)
+
+	// Check for duplicate host+port combinations
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+
+	// Check inference port uniqueness
+	for id, existingNode := range b.nodes {
+		if excludeNodeId != "" && id == excludeNodeId {
+			continue
+		}
+		if existingNode.Node.Host == node.Host && existingNode.Node.InferencePort == node.InferencePort {
+			errors = append(errors, fmt.Sprintf("duplicate inference host+port combination: %s:%d (already used by node '%s')", node.Host, node.InferencePort, id))
+			break
+		}
+	}
+
+	// Check PoC port uniqueness
+	for id, existingNode := range b.nodes {
+		if excludeNodeId != "" && id == excludeNodeId {
+			continue
+		}
+		if existingNode.Node.Host == node.Host && existingNode.Node.PoCPort == node.PoCPort {
+			errors = append(errors, fmt.Sprintf("duplicate PoC host+port combination: %s:%d (already used by node '%s')", node.Host, node.PoCPort, id))
+			break
+		}
+	}
+
+	if len(errors) > 0 {
+		return fmt.Errorf("validation failed: %s", strings.Join(errors, "; "))
+	}
+
+	return nil
+}
+
 type RegisterNode struct {
 	Node     apiconfig.InferenceNodeConfig
-	Response chan *apiconfig.InferenceNodeConfig
+	Response chan NodeCommandResponse
+}
+
+func NewRegisterNodeCommand(node apiconfig.InferenceNodeConfig) RegisterNode {
+	return RegisterNode{
+		Node:     node,
+		Response: make(chan NodeCommandResponse, 2),
+	}
 }
 
 func (r RegisterNode) GetResponseChannelCapacity() int {
@@ -79,16 +126,27 @@ func validateInferenceNodeConfig(node apiconfig.InferenceNodeConfig) error {
 }
 
 func (c RegisterNode) Execute(b *Broker) {
-	// Validate node configuration
+	// Validate node configuration (Host+Ports vs baseURL)
 	if err := validateInferenceNodeConfig(c.Node); err != nil {
 		logging.Error("RegisterNode. Invalid node configuration", types.Nodes, "error", err, "node_id", c.Node.Id)
-		c.Response <- nil
+		c.Response <- NodeCommandResponse{Node: nil, Error: err}
 		return
 	}
+
+	// Enforce model if configured
+	EnforceModel(&c.Node)
+
+	// Validate node configuration
+	if err := b.validateInferenceNode(c.Node, ""); err != nil {
+		logging.Error("RegisterNode. Node validation failed", types.Nodes, "node_id", c.Node.Id, "error", err)
+		c.Response <- NodeCommandResponse{Node: nil, Error: err}
+		return
+	}
+
 	govModels, err := b.chainBridge.GetGovernanceModels()
 	if err != nil {
 		logging.Error("RegisterNode. Failed to get governance models", types.Nodes, "error", err)
-		c.Response <- nil
+		c.Response <- NodeCommandResponse{Node: nil, Error: err}
 		return
 	}
 
@@ -101,7 +159,7 @@ func (c RegisterNode) Execute(b *Broker) {
 	for modelId := range c.Node.Models {
 		if _, ok := modelMap[modelId]; !ok {
 			logging.Error("RegisterNode. Model is not a valid governance model", types.Nodes, "model_id", modelId)
-			c.Response <- nil
+			c.Response <- NodeCommandResponse{Node: nil, Error: err}
 			return
 		}
 	}
@@ -165,28 +223,37 @@ func (c RegisterNode) Execute(b *Broker) {
 		b.nodes[c.Node.Id] = nodeWithState
 
 		// Create and register a worker for this node
-		client := b.NewNodeClient(&node)
-		worker := NewNodeWorkerWithClient(c.Node.Id, nodeWithState, client, b)
+		worker := NewNodeWorker(c.Node.Id, nodeWithState, b)
 		b.nodeWorkGroup.AddWorker(c.Node.Id, worker)
 	}()
 
+	// Populate epoch data for the newly registered node
+	if err := b.PopulateSingleNodeEpochData(c.Node.Id); err != nil {
+		logging.Warn("RegisterNode. Failed to populate epoch data", types.Nodes, "node_id", c.Node.Id, "error", err)
+	}
+
 	// Trigger a status check for the newly added node.
-	b.TriggerStatusQuery()
+	b.TriggerStatusQuery(true)
 
 	logging.Info("RegisterNode. Registered node", types.Nodes, "node", c.Node)
-	c.Response <- &c.Node
+	c.Response <- NodeCommandResponse{Node: &c.Node, Error: nil}
 }
 
 // UpdateNode updates an existing node's configuration while preserving runtime state
 type UpdateNode struct {
 	Node     apiconfig.InferenceNodeConfig
-	Response chan *apiconfig.InferenceNodeConfig
+	Response chan NodeCommandResponse
+}
+
+type NodeCommandResponse struct {
+	Node  *apiconfig.InferenceNodeConfig
+	Error error
 }
 
 func NewUpdateNodeCommand(node apiconfig.InferenceNodeConfig) UpdateNode {
 	return UpdateNode{
 		Node:     node,
-		Response: make(chan *apiconfig.InferenceNodeConfig, 2),
+		Response: make(chan NodeCommandResponse, 2),
 	}
 }
 
@@ -195,10 +262,30 @@ func (u UpdateNode) GetResponseChannelCapacity() int {
 }
 
 func (c UpdateNode) Execute(b *Broker) {
-	// Validate node configuration
+	// Validate node configuration (Host+Ports vs baseURL)
 	if err := validateInferenceNodeConfig(c.Node); err != nil {
 		logging.Error("UpdateNode. Invalid node configuration", types.Nodes, "error", err, "node_id", c.Node.Id)
-		c.Response <- nil
+		c.Response <- NodeCommandResponse{Node: nil, Error: err}
+		return
+	}
+
+	// Fetch existing node first to check if it exists
+	b.mu.RLock()
+	existing, exists := b.nodes[c.Node.Id]
+	b.mu.RUnlock()
+
+	if !exists {
+		logging.Error("UpdateNode. Node not found", types.Nodes, "node_id", c.Node.Id)
+		c.Response <- NodeCommandResponse{Node: nil, Error: fmt.Errorf("node not found: %s", c.Node.Id)}
+		return
+	}
+
+	EnforceModel(&c.Node)
+
+	// Validate node configuration (exclude current node from duplicate checks)
+	if err := b.validateInferenceNode(c.Node, c.Node.Id); err != nil {
+		logging.Error("UpdateNode. Node validation failed", types.Nodes, "node_id", c.Node.Id, "error", err)
+		c.Response <- NodeCommandResponse{Node: nil, Error: err}
 		return
 	}
 
@@ -206,7 +293,7 @@ func (c UpdateNode) Execute(b *Broker) {
 	govModels, err := b.chainBridge.GetGovernanceModels()
 	if err != nil {
 		logging.Error("UpdateNode. Failed to get governance models", types.Nodes, "error", err)
-		c.Response <- nil
+		c.Response <- NodeCommandResponse{Node: nil, Error: err}
 		return
 	}
 
@@ -218,21 +305,14 @@ func (c UpdateNode) Execute(b *Broker) {
 	for modelId := range c.Node.Models {
 		if _, ok := modelMap[modelId]; !ok {
 			logging.Error("UpdateNode. Model is not a valid governance model", types.Nodes, "model_id", modelId)
-			c.Response <- nil
+			c.Response <- NodeCommandResponse{Node: nil, Error: fmt.Errorf("model %s is not a valid governance model", modelId)}
 			return
 		}
 	}
 
-	// Fetch existing node
+	// Apply update
 	b.mu.Lock()
 	defer b.mu.Unlock()
-
-	existing, exists := b.nodes[c.Node.Id]
-	if !exists {
-		logging.Error("UpdateNode. Node not found", types.Nodes, "node_id", c.Node.Id)
-		c.Response <- nil
-		return
-	}
 
 	// Build updated Node struct, preserving node number
 	models := make(map[string]ModelArgs)
@@ -259,10 +339,10 @@ func (c UpdateNode) Execute(b *Broker) {
 	existing.Node = updated
 
 	// Optionally trigger a status re-check
-	b.TriggerStatusQuery()
+	b.TriggerStatusQuery(true)
 
 	logging.Info("UpdateNode. Updated node configuration", types.Nodes, "node_id", c.Node.Id)
-	c.Response <- &c.Node
+	c.Response <- NodeCommandResponse{Node: &c.Node, Error: nil}
 }
 
 type RemoveNode struct {
@@ -313,24 +393,33 @@ func (c SetNodeAdminStateCommand) Execute(b *Broker) {
 		}
 	}
 
+	err := c.modifyNodeAdminState(b, currentEpoch)
+	if err != nil {
+		logging.Error("Failed to set node admin state", types.Nodes, "node_id", c.NodeId, "error", err)
+		c.Response <- err
+	} else {
+		logging.Info("Updated node admin state", types.Nodes,
+			"node_id", c.NodeId,
+			"enabled", c.Enabled,
+			"epoch", currentEpoch)
+		c.Response <- nil
+	}
+}
+
+func (c SetNodeAdminStateCommand) modifyNodeAdminState(b *Broker, currentEpoch uint64) error {
 	b.mu.Lock()
+	defer b.mu.Unlock()
+
 	node, exists := b.nodes[c.NodeId]
 	if !exists {
-		c.Response <- fmt.Errorf("node not found: %s", c.NodeId)
-		return
+		return fmt.Errorf("node not found: %s", c.NodeId)
 	}
 
 	// Update admin state
 	node.State.AdminState.Enabled = c.Enabled
 	node.State.AdminState.Epoch = currentEpoch
-	b.mu.Unlock()
 
-	logging.Info("Updated node admin state", types.Nodes,
-		"node_id", c.NodeId,
-		"enabled", c.Enabled,
-		"epoch", currentEpoch)
-
-	c.Response <- nil
+	return nil
 }
 
 // UpdateNodeHardwareCommand updates the Hardware field for a specific node
