@@ -197,7 +197,7 @@ func registerNodeAndSetInferenceStatus(t *testing.T, broker *Broker, node apicon
 	mockClient := mockFactory.GetClientForNode(fmt.Sprintf("http://%s:%d", node.Host, node.PoCPort))
 	if mockClient == nil {
 		// If it's not created yet, create it.
-		mockClient = mockFactory.CreateClient(fmt.Sprintf("http://%s:%d", node.Host, node.PoCPort), fmt.Sprintf("http://%s:%d", node.Host, node.InferencePort)).(*mlnodeclient.MockClient)
+		mockClient = mockFactory.CreateClient(fmt.Sprintf("http://%s:%d", node.Host, node.PoCPort), fmt.Sprintf("http://%s:%d", node.Host, node.InferencePort), "", "").(*mlnodeclient.MockClient)
 	}
 	mockClient.Mu.Lock()
 	mockClient.CurrentState = mlnodeclient.MlNodeState_INFERENCE
@@ -642,8 +642,12 @@ func TestVersionedUrls(t *testing.T) {
 		PoCSegment:       "/api/v1",
 	}
 
-	// Test InferenceUrlWithVersion with empty version (should fall back to non-versioned)
+	// Test InferenceUrl without version (backward compatibility)
 	expectedInferenceUrl := "http://example.com:8080/api/v1"
+	actualInferenceUrl := node.InferenceUrl()
+	assert.Equal(t, expectedInferenceUrl, actualInferenceUrl)
+
+	// Test InferenceUrlWithVersion with empty version (should fall back to non-versioned)
 	actualInferenceUrlEmpty := node.InferenceUrlWithVersion("")
 	assert.Equal(t, expectedInferenceUrl, actualInferenceUrlEmpty)
 
@@ -652,8 +656,12 @@ func TestVersionedUrls(t *testing.T) {
 	actualVersionedInferenceUrl := node.InferenceUrlWithVersion("v3.0.8")
 	assert.Equal(t, expectedVersionedInferenceUrl, actualVersionedInferenceUrl)
 
-	// Test PoCUrlWithVersion with empty version (should fall back to non-versioned)
+	// Test PoCUrl without version (backward compatibility)
 	expectedPocUrl := "http://example.com:9090/api/v1"
+	actualPocUrl := node.PoCUrl()
+	assert.Equal(t, expectedPocUrl, actualPocUrl)
+
+	// Test PoCUrlWithVersion with empty version (should fall back to non-versioned)
 	actualPocUrlEmpty := node.PoCUrlWithVersion("")
 	assert.Equal(t, expectedPocUrl, actualPocUrlEmpty)
 
