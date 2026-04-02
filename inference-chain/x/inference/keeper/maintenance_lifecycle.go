@@ -46,26 +46,33 @@ func (k Keeper) ProcessMaintenanceTransitions(ctx context.Context) error {
 	}
 
 	for _, t := range transitions {
+		var transitionErr error
 		switch types.MaintenanceTransitionType(t.transitionType) {
 		case types.MaintenanceTransitionType_MAINTENANCE_TRANSITION_TYPE_ACTIVATE:
-			if err := k.activateMaintenanceReservation(ctx, sdkCtx, t.reservationID, mp); err != nil {
+			transitionErr = k.activateMaintenanceReservation(ctx, sdkCtx, t.reservationID, mp)
+			if transitionErr != nil {
 				k.LogError("Failed to activate maintenance reservation",
-					types.Maintenance, "reservation_id", t.reservationID, "error", err)
+					types.Maintenance, "reservation_id", t.reservationID, "error", transitionErr)
 			}
 		case types.MaintenanceTransitionType_MAINTENANCE_TRANSITION_TYPE_COMPLETE:
-			if err := k.completeMaintenanceReservation(ctx, sdkCtx, t.reservationID); err != nil {
+			transitionErr = k.completeMaintenanceReservation(ctx, sdkCtx, t.reservationID)
+			if transitionErr != nil {
 				k.LogError("Failed to complete maintenance reservation",
-					types.Maintenance, "reservation_id", t.reservationID, "error", err)
+					types.Maintenance, "reservation_id", t.reservationID, "error", transitionErr)
 			}
 		default:
 			k.LogError("Unknown maintenance transition type",
 				types.Maintenance, "reservation_id", t.reservationID, "type", t.transitionType)
+			// Delete unknown transition types to avoid infinite retry
+			transitionErr = nil
 		}
 
-		// Delete consumed transition row
-		if err := k.DeleteMaintenanceTransition(ctx, blockHeight, t.reservationID); err != nil {
-			k.LogError("Failed to delete maintenance transition",
-				types.Maintenance, "reservation_id", t.reservationID, "error", err)
+		// Only delete consumed transition row after successful processing
+		if transitionErr == nil {
+			if err := k.DeleteMaintenanceTransition(ctx, blockHeight, t.reservationID); err != nil {
+				k.LogError("Failed to delete maintenance transition",
+					types.Maintenance, "reservation_id", t.reservationID, "error", err)
+			}
 		}
 	}
 
