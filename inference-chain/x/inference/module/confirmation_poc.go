@@ -424,6 +424,13 @@ func (am AppModule) evaluateConfirmation(
 		} else {
 			pocWeight := notPreservedWeights[vw.MemberAddress]
 			if pocWeight > 0 && vw.ConfirmationWeight > 0 {
+				// Skip CPoC weight penalty for maintenance-covered participants.
+				// They are expected to be offline and should not lose confirmation weight.
+				if am.keeper.IsParticipantAddressInActiveMaintenance(ctx, vw.MemberAddress) {
+					am.LogInfo("evaluateConfirmation: Skipping CPoC weight penalty for maintenance-covered participant", types.PoC,
+						"participant", vw.MemberAddress)
+					continue
+				}
 				previousWeight := vw.ConfirmationWeight
 				epochGroupData.ValidationWeights[i].ConfirmationWeight = 0
 				updated = true
@@ -588,6 +595,16 @@ func (am AppModule) checkConfirmationSlashing(
 	}
 	for _, vw := range epochGroupData.ValidationWeights {
 		address := vw.MemberAddress
+
+		// Skip CPoC ratio computation for maintenance-covered participants.
+		// Their ConfirmationPoCRatio is left unchanged so they are not marked
+		// INACTIVE due to maintenance-covered absence from CPoC duties.
+		if am.keeper.IsParticipantAddressInActiveMaintenance(ctx, address) {
+			am.LogInfo("checkConfirmationSlashing: Skipping CPoC ratio for maintenance-covered participant", types.PoC,
+				"address", address)
+			continue
+		}
+
 		notPreservedTotalWeightValue, found := notPreservedTotalWeight[address]
 		if !found {
 			am.LogWarn("checkConfirmationSlashing: Not preserved total weight not found for participant", types.PoC,

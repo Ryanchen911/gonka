@@ -27,6 +27,15 @@ func (k Keeper) GetRandomExecutor(goCtx context.Context, req *types.QueryGetRand
 		return nil, err
 	}
 
+	// Wrap filter to exclude participants in active maintenance windows.
+	// Maintenance-covered participants remain in epoch groups but must not
+	// receive new inference assignments during their maintenance window.
+	originalFilter := filterFn
+	filterFn = func(members []*group.GroupMember) []*group.GroupMember {
+		filtered := originalFilter(members)
+		return k.filterOutMaintenanceParticipants(goCtx, filtered)
+	}
+
 	epochGroup, err := k.GetCurrentEpochGroup(goCtx)
 	if err != nil {
 		k.Logger().Error("GetRandomExecutor: failed to get current epoch group",

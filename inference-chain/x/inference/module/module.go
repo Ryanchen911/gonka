@@ -314,6 +314,20 @@ func (am AppModule) handleExpiredInferenceWithContext(ctx context.Context, infer
 		return
 	}
 
+	// Executor has the required node — check maintenance exemption before penalizing.
+	// During active maintenance, expiry penalties are waived (the participant is
+	// expected to be offline and should not accumulate MissedRequests).
+	if am.keeper.IsParticipantAddressInActiveMaintenance(ctx, inference.AssignedTo) {
+		am.LogInfo("Inference expired during active maintenance, waiving penalty",
+			types.Inferences,
+			"inferenceId", inference.InferenceId,
+			"executor", inference.AssignedTo,
+			"model", inference.Model,
+			"epochIndex", epochToCheck.Index)
+		am.expireInferenceAndIssueRefund(ctx, inference)
+		return
+	}
+
 	// Executor has the required node, proceed with normal expiry handling (with penalty)
 	am.LogInfo("Inference expired, not finished. Issuing refund and penalizing executor",
 		types.Inferences,

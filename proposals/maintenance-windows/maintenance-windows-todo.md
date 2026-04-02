@@ -321,7 +321,7 @@ Each task includes:
 ### Section 4: Inference-Chain Duty Exemptions
 
 #### 4.1 Suppress Random Inference Assignment
-- **Task**: [ ] Remove active-maintenance participants from new random assignment
+- **Task**: [?] Remove active-maintenance participants from new random assignment
 - **What**:
   - Identify the assignment path(s) for new inference work
   - Exclude participants with active maintenance from random assignment immediately at window start
@@ -333,7 +333,7 @@ Each task includes:
 - **Dependencies**: 2.1
 
 #### 4.1a Enforce Epoch-Critical Phase Scheduling Rejections
-- **Task**: [ ] Reject maintenance windows that overlap PoC commit / exchange or DKG phases
+- **Task**: [?] Reject maintenance windows that overlap PoC commit / exchange or DKG phases
 - **What**:
   - Compute overlap against the current scheduling target epoch(s)
   - Reject windows overlapping:
@@ -347,7 +347,7 @@ Each task includes:
 - **Dependencies**: 2.1
 
 #### 4.2 Waive Maintenance-Covered Inference Penalties
-- **Task**: [ ] Suppress downtime and expiry penalties during active maintenance
+- **Task**: [?] Suppress downtime and expiry penalties during active maintenance
 - **What**:
   - Identify downtime and expiry penalty paths
   - Add maintenance checks so active windows waive these penalties
@@ -361,7 +361,7 @@ Each task includes:
 - **Dependencies**: 2.1
 
 #### 4.3 Suppress Validation Duties
-- **Task**: [ ] Exempt active-maintenance participants from validation duties
+- **Task**: [?] Exempt active-maintenance participants from validation duties
 - **What**:
   - Identify where validation obligations are assigned or enforced
   - Exclude maintenance-covered participants from validation duty expectations
@@ -374,7 +374,7 @@ Each task includes:
 - **Dependencies**: 4.2
 
 #### 4.4 Suppress Confirmation PoC Duties
-- **Task**: [ ] Exempt active-maintenance participants from CPoC duties
+- **Task**: [?] Exempt active-maintenance participants from CPoC duties
 - **What**:
   - Identify where Confirmation PoC participation is expected and where its penalties or qualification logic are applied
   - Exclude maintenance-covered participants from CPoC expectations during active windows

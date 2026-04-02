@@ -5,6 +5,7 @@ import (
 
 	"cosmossdk.io/collections"
 	sdk "github.com/cosmos/cosmos-sdk/types"
+	"github.com/cosmos/cosmos-sdk/x/group"
 	"github.com/productscience/inference/x/inference/types"
 )
 
@@ -207,4 +208,38 @@ func (k Keeper) IsParticipantInActiveMaintenance(ctx context.Context, participan
 		return false
 	}
 	return r.Status == types.MaintenanceReservationStatus_MAINTENANCE_RESERVATION_STATUS_ACTIVE
+}
+
+// IsParticipantAddressInActiveMaintenance is a convenience wrapper that accepts
+// a bech32 address string instead of sdk.AccAddress.
+func (k Keeper) IsParticipantAddressInActiveMaintenance(ctx context.Context, address string) bool {
+	addr, err := sdk.AccAddressFromBech32(address)
+	if err != nil {
+		return false
+	}
+	return k.IsParticipantInActiveMaintenance(ctx, addr)
+}
+
+// filterOutMaintenanceParticipants removes group members that are currently in
+// an active maintenance window. Used by GetRandomExecutor to prevent assigning
+// new inference work to maintenance-covered participants.
+func (k Keeper) filterOutMaintenanceParticipants(ctx context.Context, members []*group.GroupMember) []*group.GroupMember {
+	mp := k.GetMaintenanceParams(ctx)
+	if mp == nil || !mp.MaintenanceEnabled {
+		return members
+	}
+
+	filtered := make([]*group.GroupMember, 0, len(members))
+	for _, member := range members {
+		if member == nil || member.Member == nil {
+			continue
+		}
+		if k.IsParticipantAddressInActiveMaintenance(ctx, member.Member.Address) {
+			k.LogDebug("Excluding maintenance-covered participant from assignment",
+				types.Maintenance, "participant", member.Member.Address)
+			continue
+		}
+		filtered = append(filtered, member)
+	}
+	return filtered
 }
