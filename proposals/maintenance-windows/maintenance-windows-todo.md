@@ -278,7 +278,7 @@ Each task includes:
 - **Dependencies**: 1.4
 
 #### 3.2 Wire Maintenance State into Slashing Checks
-- **Task**: [ ] Define the lookup boundary from SDK liveness code into chain maintenance state
+- **Task**: [?] Define the lookup boundary from SDK liveness code into chain maintenance state
 - **What**:
   - Decide and implement how the slashing path checks whether a participant is in active maintenance
   - Keep the lookup deterministic and cheap enough for begin-block usage
@@ -291,7 +291,7 @@ Each task includes:
 - **Dependencies**: 3.1
 
 #### 3.3 Add Defensive Hook Guards
-- **Task**: [ ] Update collateral/staking-hook logic as defense in depth
+- **Task**: [?] Update collateral/staking-hook logic as defense in depth
 - **What**:
   - Add secondary protection so maintenance-covered participants do not get collateral-side downtime fallout if slashing-related hooks fire unexpectedly
   - Document clearly that this is secondary protection, not the primary enforcement mechanism
@@ -302,7 +302,7 @@ Each task includes:
 - **Dependencies**: 3.1
 
 #### 3.4 Add Activation-Time Advisory Re-Check
-- **Task**: [ ] Re-check concurrency caps at activation time and persist advisory warnings
+- **Task**: [?] Re-check concurrency caps at activation time and persist advisory warnings
 - **What**:
   - During `Scheduled -> Active` transition, re-check concurrent participant count and power against current params
   - If current caps would now reject the reservation:

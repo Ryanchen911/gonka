@@ -288,6 +288,7 @@ func New(
 	}
 
 	app.CollateralKeeper.SetRequiredCollateralProvider(app.InferenceKeeper)
+	app.CollateralKeeper.SetMaintenanceChecker(&app.InferenceKeeper)
 
 	app.App = appBuilder.Build(db, traceStore, baseAppOptions...)
 

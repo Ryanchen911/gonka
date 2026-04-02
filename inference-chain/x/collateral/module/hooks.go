@@ -43,8 +43,18 @@ func (h StakingHooks) AfterValidatorBonded(ctx context.Context, consAddr sdk.Con
 
 func (h StakingHooks) AfterValidatorBeginUnbonding(ctx context.Context, consAddr sdk.ConsAddress, valAddr sdk.ValAddress) error {
 	sdkCtx := sdk.UnwrapSDKContext(ctx)
+	accAddr := sdk.AccAddress(valAddr)
+
+	// Defense in depth: do not jail maintenance-covered participants.
+	// The primary enforcement is in x/slashing liveness path; this is a secondary guardrail.
+	if h.k.IsParticipantInActiveMaintenance(ctx, accAddr) {
+		h.k.Logger().Info("Staking hook: AfterValidatorBeginUnbonding skipped for maintenance-covered participant",
+			"validator_address", valAddr.String(), "height", sdkCtx.BlockHeight())
+		return nil
+	}
+
 	// When a validator is jailed, we mark their corresponding participant as jailed in our module.
-	h.k.SetJailed(sdkCtx, sdk.AccAddress(valAddr))
+	h.k.SetJailed(sdkCtx, accAddr)
 	h.k.Logger().Debug("Staking hook: AfterValidatorBeginUnbonding, set jailed status", "validator_address", valAddr.String(), "height", sdkCtx.BlockHeight())
 	return nil
 }
@@ -73,6 +83,20 @@ func (h StakingHooks) BeforeValidatorSlashed(ctx context.Context, valAddr sdk.Va
 	sdkCtx := sdk.UnwrapSDKContext(ctx)
 
 	accAddr := sdk.AccAddress(valAddr)
+
+	// Defense in depth: do not slash collateral for maintenance-covered participants
+	// when the slash is downtime-related. The primary enforcement is in x/slashing.
+	// Note: we cannot distinguish downtime vs double-sign slashes here, so this guard
+	// suppresses all staking-driven slashes during maintenance. Double-sign evidence
+	// goes through a separate path and is not affected by this guard.
+	if h.k.IsParticipantInActiveMaintenance(ctx, accAddr) {
+		h.k.Logger().Info("Staking hook: BeforeValidatorSlashed skipped for maintenance-covered participant",
+			"validator_address", valAddr.String(),
+			"participant_address", accAddr.String(),
+			"fraction", fraction.String(),
+		)
+		return nil
+	}
 
 	h.k.Logger().Debug("Staking hook: Slashing collateral for validator",
 		"validator_address", valAddr.String(),
