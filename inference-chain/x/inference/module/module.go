@@ -324,6 +324,15 @@ func (am AppModule) handleExpiredInferenceWithContext(ctx context.Context, infer
 			"executor", inference.AssignedTo,
 			"model", inference.Model,
 			"epochIndex", epochToCheck.Index)
+
+		sdkCtx := sdk.UnwrapSDKContext(ctx)
+		sdkCtx.EventManager().EmitEvent(sdk.NewEvent(
+			"maintenance_penalty_waived",
+			sdk.NewAttribute("inference_id", inference.InferenceId),
+			sdk.NewAttribute("executor", inference.AssignedTo),
+			sdk.NewAttribute("reason", "expiry_during_active_maintenance"),
+		))
+
 		am.expireInferenceAndIssueRefund(ctx, inference)
 		return
 	}

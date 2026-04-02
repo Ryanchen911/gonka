@@ -13,40 +13,175 @@ func (k Keeper) MaintenanceCredit(ctx context.Context, req *types.QueryMaintenan
 	if req == nil {
 		return nil, status.Error(codes.InvalidArgument, "invalid request")
 	}
-	// TODO: implement in Task 5.1
-	return &types.QueryMaintenanceCreditResponse{Found: false}, nil
+
+	participantAddr, err := sdk.AccAddressFromBech32(req.Participant)
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, "invalid participant address")
+	}
+
+	state, found := k.GetMaintenanceState(ctx, participantAddr)
+	if !found {
+		return &types.QueryMaintenanceCreditResponse{CreditBlocks: 0, Found: false}, nil
+	}
+
+	return &types.QueryMaintenanceCreditResponse{
+		CreditBlocks: state.CreditBlocks,
+		Found:        true,
+	}, nil
 }
 
 func (k Keeper) MaintenanceScheduled(ctx context.Context, req *types.QueryMaintenanceScheduledRequest) (*types.QueryMaintenanceScheduledResponse, error) {
 	if req == nil {
 		return nil, status.Error(codes.InvalidArgument, "invalid request")
 	}
-	// TODO: implement in Task 5.1
-	return &types.QueryMaintenanceScheduledResponse{Found: false}, nil
+
+	participantAddr, err := sdk.AccAddressFromBech32(req.Participant)
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, "invalid participant address")
+	}
+
+	state, found := k.GetMaintenanceState(ctx, participantAddr)
+	if !found || state.ScheduledReservationId == 0 {
+		return &types.QueryMaintenanceScheduledResponse{Found: false}, nil
+	}
+
+	reservation, found := k.GetMaintenanceReservation(ctx, state.ScheduledReservationId)
+	if !found {
+		return &types.QueryMaintenanceScheduledResponse{Found: false}, nil
+	}
+
+	return &types.QueryMaintenanceScheduledResponse{
+		Reservation: &reservation,
+		Found:       true,
+	}, nil
 }
 
 func (k Keeper) MaintenanceActive(ctx context.Context, req *types.QueryMaintenanceActiveRequest) (*types.QueryMaintenanceActiveResponse, error) {
 	if req == nil {
 		return nil, status.Error(codes.InvalidArgument, "invalid request")
 	}
-	// TODO: implement in Task 5.1
-	return &types.QueryMaintenanceActiveResponse{}, nil
+
+	var activeReservations []*types.MaintenanceReservation
+
+	iter, err := k.MaintenanceStates.Iterate(ctx, nil)
+	if err != nil {
+		return nil, status.Error(codes.Internal, "failed to iterate maintenance states")
+	}
+	defer iter.Close()
+
+	for ; iter.Valid(); iter.Next() {
+		state, err := iter.Value()
+		if err != nil {
+			continue
+		}
+		if state.ActiveReservationId == 0 {
+			continue
+		}
+		r, found := k.GetMaintenanceReservation(ctx, state.ActiveReservationId)
+		if found && r.Status == types.MaintenanceReservationStatus_MAINTENANCE_RESERVATION_STATUS_ACTIVE {
+			activeReservations = append(activeReservations, &r)
+		}
+	}
+
+	return &types.QueryMaintenanceActiveResponse{
+		Reservations: activeReservations,
+	}, nil
 }
 
 func (k Keeper) MaintenanceStatus(ctx context.Context, req *types.QueryMaintenanceStatusRequest) (*types.QueryMaintenanceStatusResponse, error) {
 	if req == nil {
 		return nil, status.Error(codes.InvalidArgument, "invalid request")
 	}
-	// TODO: implement in Task 5.1
-	return &types.QueryMaintenanceStatusResponse{Found: false}, nil
+
+	participantAddr, err := sdk.AccAddressFromBech32(req.Participant)
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, "invalid participant address")
+	}
+
+	state, found := k.GetMaintenanceState(ctx, participantAddr)
+	if !found {
+		return &types.QueryMaintenanceStatusResponse{Found: false}, nil
+	}
+
+	resp := &types.QueryMaintenanceStatusResponse{
+		State: &state,
+		Found: true,
+	}
+
+	if state.ActiveReservationId != 0 {
+		r, found := k.GetMaintenanceReservation(ctx, state.ActiveReservationId)
+		if found {
+			resp.ActiveReservation = &r
+		}
+	}
+
+	if state.ScheduledReservationId != 0 {
+		r, found := k.GetMaintenanceReservation(ctx, state.ScheduledReservationId)
+		if found {
+			resp.ScheduledReservation = &r
+		}
+	}
+
+	return resp, nil
 }
 
 func (k Keeper) MaintenanceConcurrency(ctx context.Context, req *types.QueryMaintenanceConcurrencyRequest) (*types.QueryMaintenanceConcurrencyResponse, error) {
 	if req == nil {
 		return nil, status.Error(codes.InvalidArgument, "invalid request")
 	}
-	// TODO: implement in Task 5.1
-	return &types.QueryMaintenanceConcurrencyResponse{}, nil
+
+	mp := k.GetMaintenanceParams(ctx)
+	if mp == nil {
+		return &types.QueryMaintenanceConcurrencyResponse{}, nil
+	}
+
+	targetHeight := req.Height
+	if targetHeight == 0 {
+		sdkCtx := sdk.UnwrapSDKContext(ctx)
+		targetHeight = sdkCtx.BlockHeight()
+	}
+
+	// Scan reservations that could be active at targetHeight.
+	// A reservation [s, s+d-1] covers targetHeight iff s <= targetHeight AND s+d-1 >= targetHeight.
+	// Since d <= max_window_blocks, s >= targetHeight - max_window_blocks + 1.
+	scanFrom := targetHeight - int64(mp.MaintenanceMaxWindowBlocks) + 1
+	scanTo := targetHeight
+
+	concurrentCount := uint32(0)
+	var concurrentPower int64
+
+	_ = k.IterateMaintenanceStartHeightRange(ctx, scanFrom, scanTo, func(reservationID uint64) (bool, error) {
+		r, found := k.GetMaintenanceReservation(ctx, reservationID)
+		if !found {
+			return false, nil
+		}
+		if r.Status == types.MaintenanceReservationStatus_MAINTENANCE_RESERVATION_STATUS_COMPLETED ||
+			r.Status == types.MaintenanceReservationStatus_MAINTENANCE_RESERVATION_STATUS_CANCELED {
+			return false, nil
+		}
+
+		rEnd := r.StartHeight + int64(r.DurationBlocks) - 1
+		if r.StartHeight <= targetHeight && rEnd >= targetHeight {
+			concurrentCount++
+			rAddr, err := sdk.AccAddressFromBech32(r.Participant)
+			if err == nil {
+				concurrentPower += k.getParticipantPower(ctx, rAddr)
+			}
+		}
+		return false, nil
+	})
+
+	// Express power as basis points of total
+	totalPower := k.getTotalConsensusPower(ctx)
+	var concurrentPowerBps int64
+	if totalPower > 0 {
+		concurrentPowerBps = concurrentPower * 10000 / totalPower
+	}
+
+	return &types.QueryMaintenanceConcurrencyResponse{
+		ConcurrentCount:    concurrentCount,
+		ConcurrentPowerBps: concurrentPowerBps,
+	}, nil
 }
 
 func (k Keeper) MaintenanceSchedulability(ctx context.Context, req *types.QueryMaintenanceSchedulabilityRequest) (*types.QueryMaintenanceSchedulabilityResponse, error) {

@@ -388,7 +388,7 @@ Each task includes:
 ### Section 5: Queries, Events, and Observability
 
 #### 5.1 Implement Maintenance Queries
-- **Task**: [ ] Implement all agreed query endpoints
+- **Task**: [?] Implement all agreed query endpoints
 - **What**:
   - Current credit
   - Scheduled windows
@@ -405,7 +405,7 @@ Each task includes:
 - **Dependencies**: Section 2
 
 #### 5.2 Add Events and Structured Logs
-- **Task**: [ ] Add maintenance-specific logging and events
+- **Task**: [?] Add maintenance-specific logging and events
 - **What**:
   - Emit logs/events for schedule, cancel, activate, complete
   - Emit logs/events for liveness exemption application and duty suppression
