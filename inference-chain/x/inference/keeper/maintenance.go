@@ -157,6 +157,40 @@ func (k Keeper) iterateStartHeightPrefix(ctx context.Context, height int64, fn f
 	return nil
 }
 
+// --- Credit accrual ---
+
+// grantMaintenanceCredit grants maintenance credit to a participant after a successful reward claim.
+// Credit is not granted if maintenance was activated for that participant in the claimed epoch.
+func (k msgServer) grantMaintenanceCredit(ctx context.Context, participant string, epochIndex uint64) {
+	mp := k.GetMaintenanceParams(ctx)
+	if mp == nil || !mp.MaintenanceEnabled || mp.MaintenanceCreditEarnPerSuccessfulEpochBlocks == 0 {
+		return
+	}
+
+	participantAddr, err := sdk.AccAddressFromBech32(participant)
+	if err != nil {
+		return
+	}
+
+	state := k.GetOrCreateMaintenanceState(ctx, participantAddr)
+
+	// Do not grant credit if maintenance was activated in this epoch
+	if state.LastMaintenanceEpoch == epochIndex && epochIndex != 0 {
+		k.LogDebug("Skipping maintenance credit: maintenance was used in this epoch",
+			types.Maintenance, "participant", participant, "epoch", epochIndex)
+		return
+	}
+
+	state.CreditBlocks += mp.MaintenanceCreditEarnPerSuccessfulEpochBlocks
+	if state.CreditBlocks > mp.MaintenanceCreditCapBlocks {
+		state.CreditBlocks = mp.MaintenanceCreditCapBlocks
+	}
+
+	if err := k.SetMaintenanceState(ctx, state); err != nil {
+		k.LogError("Failed to grant maintenance credit", types.Maintenance, "participant", participant, "error", err)
+	}
+}
+
 // --- Convenience: check if a participant is in active maintenance ---
 
 // IsParticipantInActiveMaintenance returns true if the participant has an active maintenance window.

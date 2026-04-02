@@ -112,6 +112,13 @@ func (k Keeper) activateMaintenanceReservation(ctx context.Context, sdkCtx sdk.C
 	state := k.GetOrCreateMaintenanceState(ctx, participantAddr)
 	state.ActiveReservationId = reservationID
 	state.ScheduledReservationId = 0
+
+	// Mark maintenance usage for the current epoch (suppresses credit accrual)
+	epochIndex, found := k.GetEffectiveEpochIndex(ctx)
+	if found {
+		state.LastMaintenanceEpoch = epochIndex
+	}
+
 	if err := k.SetMaintenanceState(ctx, state); err != nil {
 		return err
 	}

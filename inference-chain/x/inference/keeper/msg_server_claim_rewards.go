@@ -141,6 +141,9 @@ func (ms msgServer) finishSettle(ctx sdk.Context, settleAmount *types.SettleAmou
 			ms.LogError("Error setting epoch performance summary", types.Claims, "error", err)
 		}
 	}
+
+	// Grant maintenance credit for this successfully claimed epoch
+	ms.grantMaintenanceCredit(ctx, settleAmount.Participant, settleAmount.EpochIndex)
 }
 
 func (k msgServer) validateRequest(ctx sdk.Context, msg *types.MsgClaimRewards) (*types.SettleAmount, *types.MsgClaimRewardsResponse) {

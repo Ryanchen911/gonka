@@ -164,7 +164,7 @@ Each task includes:
 ### Section 2: Scheduling and Credit Logic
 
 #### 2.1 Implement Scheduling Validation
-- **Task**: [ ] Implement `MsgScheduleMaintenance` validation and execution
+- **Task**: [?] Implement `MsgScheduleMaintenance` validation and execution
 - **What**:
   - Validate:
     - caller is participant or AuthZ delegate
@@ -187,7 +187,7 @@ Each task includes:
 - **Dependencies**: 1.4
 
 #### 2.2 Implement Cancellation Logic
-- **Task**: [ ] Implement `MsgCancelMaintenance`
+- **Task**: [?] Implement `MsgCancelMaintenance`
 - **What**:
   - Allow cancellation only while reservation is still scheduled
   - Restore unspent maintenance credit
@@ -200,7 +200,7 @@ Each task includes:
 - **Dependencies**: 2.1
 
 #### 2.3 Implement Scheduling-Availability Query
-- **Task**: [ ] Add preflight schedulability query
+- **Task**: [?] Add preflight schedulability query
 - **What**:
   - Add a query that takes proposed participant, start height, and duration
   - Return whether the window is schedulable under current rules
@@ -220,7 +220,7 @@ Each task includes:
 - **Dependencies**: 2.1
 
 #### 2.4 Implement Credit Earning in Reward Claim Flow
-- **Task**: [ ] Grant maintenance credit during successful reward claim
+- **Task**: [?] Grant maintenance credit during successful reward claim
 - **What**:
   - Identify the reward-claim path
   - Add maintenance-credit accrual there
@@ -235,7 +235,7 @@ Each task includes:
 - **Dependencies**: 1.3
 
 #### 2.5 Mark Maintenance Usage Per Epoch
-- **Task**: [ ] Record maintenance activation usage for the current epoch
+- **Task**: [?] Record maintenance activation usage for the current epoch
 - **What**:
   - When a reservation transitions to active, mark that the participant used maintenance in that epoch
   - Ensure the reward-claim path can check this cheaply
@@ -247,7 +247,7 @@ Each task includes:
 - **Dependencies**: 1.5
 
 #### 2.6 Implement Bounded Overlap Search
-- **Task**: [ ] Implement bounded scheduling-overlap lookup
+- **Task**: [?] Implement bounded scheduling-overlap lookup
 - **What**:
   - Use the reservation start-height overlap index, not the `BeginBlock` transition schedule
   - Use the `max_window_blocks` parameter to bound overlap search
