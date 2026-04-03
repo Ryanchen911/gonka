@@ -421,7 +421,7 @@ Each task includes:
 ### Section 6: Upgrade and Genesis Handling
 
 #### 6.1 Add Upgrade Path for Maintenance Credit State and Params
-- **Task**: [ ] Add upgrade handling for maintenance feature introduction
+- **Task**: [?] Add upgrade handling for maintenance feature introduction
 - **What**:
   - Initialize maintenance credit to zero for all existing participants
   - Add new parameters with defaults
@@ -434,7 +434,7 @@ Each task includes:
 - **Dependencies**: 1.3
 
 #### 6.2 Verify Genesis / Export Behavior
-- **Task**: [ ] Verify maintenance state exports and imports cleanly
+- **Task**: [?] Verify maintenance state exports and imports cleanly
 - **What**:
   - Add reservation export/import if required
   - Verify `MaintenanceState` is included correctly
