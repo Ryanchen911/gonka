@@ -514,7 +514,7 @@ Each task includes:
 ### Section 8: Deferred / Follow-Up Items
 
 #### 8.1 In-Flight Inference Semantics
-- **Task**: [ ] Define and implement treatment of in-flight inferences
+- **Task**: [?] Define and implement treatment of in-flight inferences
 - **What**:
   - Decide whether maintenance start cancels in-flight work, allows grace handling, or uses a hybrid rule
   - Update proposal and implementation accordingly
@@ -525,7 +525,7 @@ Each task includes:
 - **Dependencies**: Section 4
 
 #### 8.2 Subnet Interaction Design
-- **Task**: [ ] Specify how maintenance windows interact with subnets
+- **Task**: [?] Specify how maintenance windows interact with subnets
 - **What**:
   - Review subnet-specific duties and assumptions as that feature develops
   - Decide whether maintenance affects subnet scheduling, duties, or settlement logic
@@ -537,7 +537,7 @@ Each task includes:
 - **Dependencies**: None
 
 #### 8.3 Reservation Pruning
-- **Task**: [ ] Add pruning for completed/canceled maintenance reservations
+- **Task**: [?] Add pruning for completed/canceled maintenance reservations
 - **What**:
   - Add retention and pruning strategy for historical reservations
   - Keep this out of the critical path unless state growth becomes noticeable
