@@ -145,6 +145,9 @@ func (k Keeper) MaintenanceConcurrency(ctx context.Context, req *types.QueryMain
 	// A reservation [s, s+d-1] covers targetHeight iff s <= targetHeight AND s+d-1 >= targetHeight.
 	// Since d <= max_window_blocks, s >= targetHeight - max_window_blocks + 1.
 	scanFrom := targetHeight - int64(mp.MaintenanceMaxWindowBlocks) + 1
+	if scanFrom < 0 {
+		scanFrom = 0
+	}
 	scanTo := targetHeight
 
 	concurrentCount := uint32(0)

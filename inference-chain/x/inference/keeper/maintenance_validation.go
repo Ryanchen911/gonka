@@ -3,7 +3,9 @@ package keeper
 import (
 	"context"
 	"fmt"
+	"math"
 
+	cosmossdk_math "cosmossdk.io/math"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/productscience/inference/x/inference/types"
 )
@@ -89,6 +91,9 @@ func (k Keeper) checkConcurrencyLimits(ctx context.Context, startHeight int64, d
 	//   s <= endHeight AND s+d-1 >= startHeight
 	// Since d <= max_window_blocks, we know s >= startHeight - max_window_blocks
 	scanFrom := startHeight - int64(mp.MaintenanceMaxWindowBlocks)
+	if scanFrom < 0 {
+		scanFrom = 0
+	}
 	scanTo := endHeight
 
 	err := k.IterateMaintenanceStartHeightRange(ctx, scanFrom, scanTo, func(reservationID uint64) (bool, error) {
@@ -140,6 +145,9 @@ func (k Keeper) checkParticipantOverlap(ctx context.Context, participant sdk.Acc
 	endHeight := startHeight + int64(durationBlocks) - 1
 
 	scanFrom := startHeight - int64(mp.MaintenanceMaxWindowBlocks)
+	if scanFrom < 0 {
+		scanFrom = 0
+	}
 	scanTo := endHeight
 
 	var overlapFound bool
@@ -173,6 +181,15 @@ func (k Keeper) checkParticipantOverlap(ctx context.Context, participant sdk.Acc
 	return nil
 }
 
+// safeTokensToInt64 safely converts a validator's Tokens (math.Int) to int64.
+// Returns 0 if the value overflows int64.
+func safeTokensToInt64(tokens cosmossdk_math.Int) int64 {
+	if !tokens.IsInt64() {
+		return 0
+	}
+	return tokens.Int64()
+}
+
 // getParticipantPower returns the consensus power for a participant.
 // Returns 0 if the participant is not a validator or power cannot be determined.
 func (k Keeper) getParticipantPower(ctx context.Context, participant sdk.AccAddress) int64 {
@@ -193,13 +210,14 @@ func (k Keeper) getParticipantPower(ctx context.Context, participant sdk.AccAddr
 			accAddr = sdk.AccAddress(valAddr)
 		}
 		if accAddr.String() == participantStr {
-			return v.Tokens.Int64()
+			return safeTokensToInt64(v.Tokens)
 		}
 	}
 	return 0
 }
 
 // getTotalConsensusPower returns the total consensus power across all validators.
+// Uses saturating addition to prevent overflow.
 func (k Keeper) getTotalConsensusPower(ctx context.Context) int64 {
 	validators, err := k.Staking.GetAllValidators(ctx)
 	if err != nil {
@@ -207,7 +225,12 @@ func (k Keeper) getTotalConsensusPower(ctx context.Context) int64 {
 	}
 	var total int64
 	for _, v := range validators {
-		total += v.Tokens.Int64()
+		power := safeTokensToInt64(v.Tokens)
+		// Saturating addition: cap at math.MaxInt64 instead of wrapping
+		if power > 0 && total > math.MaxInt64-power {
+			return math.MaxInt64
+		}
+		total += power
 	}
 	return total
 }

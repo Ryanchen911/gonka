@@ -377,8 +377,9 @@ func TestLifecycle_ActivateAndComplete(t *testing.T) {
 	require.Equal(t, resp.ReservationId, state.ActiveReservationId)
 	require.Equal(t, uint64(0), state.ScheduledReservationId)
 
-	// Process at end height (completion)
-	completeCtx := ctx.WithBlockHeight(550) // 500 + 50
+	// Process at end height (completion).
+	// Window covers [500, 549] inclusive (50 blocks), so COMPLETE transition fires at 549.
+	completeCtx := ctx.WithBlockHeight(549) // 500 + 50 - 1
 	require.NoError(t, k.ProcessMaintenanceTransitions(completeCtx))
 
 	r, found = k.GetMaintenanceReservation(completeCtx, resp.ReservationId)
@@ -598,8 +599,8 @@ func TestIsParticipantInActiveMaintenance(t *testing.T) {
 	require.NoError(t, k.ProcessMaintenanceTransitions(activateCtx))
 	require.True(t, k.IsParticipantInActiveMaintenance(activateCtx, addr))
 
-	// Complete at block 550
-	completeCtx := ctx.WithBlockHeight(550)
+	// Complete at block 549 (window covers [500, 549])
+	completeCtx := ctx.WithBlockHeight(549)
 	require.NoError(t, k.ProcessMaintenanceTransitions(completeCtx))
 	require.False(t, k.IsParticipantInActiveMaintenance(completeCtx, addr))
 }

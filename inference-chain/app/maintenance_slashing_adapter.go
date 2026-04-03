@@ -39,8 +39,13 @@ func (a *MaintenanceSlashingAdapter) IsValidatorInActiveMaintenance(ctx context.
 			continue
 		}
 		if sdk.ConsAddress(pk.Address()).Equals(consAddr) {
-			// Found the validator — convert operator address to AccAddress
-			accAddr := sdk.AccAddress(sdk.ValAddress(v.GetOperator()))
+			// Found the validator — decode the bech32 operator address to AccAddress.
+			// v.GetOperator() returns a bech32 string; we must decode it properly.
+			valAddr, err := sdk.ValAddressFromBech32(v.GetOperator())
+			if err != nil {
+				return false
+			}
+			accAddr := sdk.AccAddress(valAddr)
 			return a.inferenceKeeper.IsParticipantInActiveMaintenance(ctx, accAddr)
 		}
 	}

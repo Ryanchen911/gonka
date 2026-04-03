@@ -102,7 +102,9 @@ func (k msgServer) ScheduleMaintenance(goCtx context.Context, msg *types.MsgSche
 	// Add transition schedule entries for BeginBlock lifecycle
 	activateType := uint32(types.MaintenanceTransitionType_MAINTENANCE_TRANSITION_TYPE_ACTIVATE)
 	completeType := uint32(types.MaintenanceTransitionType_MAINTENANCE_TRANSITION_TYPE_COMPLETE)
-	endHeight := msg.StartHeight + int64(msg.DurationBlocks)
+	// Window covers [startHeight, startHeight + durationBlocks - 1] inclusive.
+	// The COMPLETE transition fires at the block after the last covered block.
+	endHeight := msg.StartHeight + int64(msg.DurationBlocks) - 1
 
 	if err := k.SetMaintenanceTransition(goCtx, msg.StartHeight, reservationID, activateType); err != nil {
 		return nil, err

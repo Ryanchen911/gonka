@@ -143,7 +143,9 @@ func (ms msgServer) finishSettle(ctx sdk.Context, settleAmount *types.SettleAmou
 	}
 
 	// Grant maintenance credit for this successfully claimed epoch
-	ms.grantMaintenanceCredit(ctx, settleAmount.Participant, settleAmount.EpochIndex)
+	if err := ms.grantMaintenanceCredit(ctx, settleAmount.Participant, settleAmount.EpochIndex); err != nil {
+		ms.LogError("Error granting maintenance credit", types.Maintenance, "error", err)
+	}
 }
 
 func (k msgServer) validateRequest(ctx sdk.Context, msg *types.MsgClaimRewards) (*types.SettleAmount, *types.MsgClaimRewardsResponse) {
@@ -242,6 +244,18 @@ func (k msgServer) validateClaim(ctx sdk.Context, msg *types.MsgClaimRewards, se
 }
 
 func (k msgServer) hasSignificantMissedValidations(ctx sdk.Context, msg *types.MsgClaimRewards) (bool, error) {
+	// Exempt participants who had active maintenance during the claimed epoch.
+	// Maintenance-covered participants are not expected to perform validation duties.
+	participantAddr, err := sdk.AccAddressFromBech32(msg.Creator)
+	if err == nil {
+		state, found := k.GetMaintenanceState(ctx, participantAddr)
+		if found && state.LastMaintenanceEpoch == msg.EpochIndex && msg.EpochIndex != 0 {
+			k.LogInfo("Skipping missed validation check: participant had maintenance in this epoch",
+				types.Maintenance, "participant", msg.Creator, "epoch", msg.EpochIndex)
+			return false, nil
+		}
+	}
+
 	//nolint:forbidigo // Must in different context
 	mustBeValidated, err := k.getMustBeValidatedInferences(ctx, msg)
 	if err != nil {

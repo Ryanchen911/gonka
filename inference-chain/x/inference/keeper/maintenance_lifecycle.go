@@ -199,6 +199,9 @@ func (k Keeper) checkActivationTimeConcurrency(ctx context.Context, r types.Main
 	var concurrentPower int64
 
 	scanFrom := r.StartHeight - int64(mp.MaintenanceMaxWindowBlocks)
+	if scanFrom < 0 {
+		scanFrom = 0
+	}
 	scanTo := endHeight
 
 	_ = k.IterateMaintenanceStartHeightRange(ctx, scanFrom, scanTo, func(reservationID uint64) (bool, error) {

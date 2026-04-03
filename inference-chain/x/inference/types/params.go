@@ -350,6 +350,9 @@ func (p *MaintenanceParams) Validate() error {
 	if p.MaintenanceCreditCapBlocks == 0 {
 		return fmt.Errorf("maintenance credit cap blocks must be positive")
 	}
+	if p.MaintenanceMaxConcurrentValidators == 0 {
+		return fmt.Errorf("maintenance max concurrent validators must be positive")
+	}
 	if p.MaintenanceMaxConcurrentPowerBps > 10000 {
 		return fmt.Errorf("maintenance max concurrent power bps cannot exceed 10000")
 	}
