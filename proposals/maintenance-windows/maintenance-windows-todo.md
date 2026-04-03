@@ -449,7 +449,7 @@ Each task includes:
 ### Section 7: Testing
 
 #### 7.1 Unit Tests for Maintenance Scheduling and Credit
-- **Task**: [ ] Add unit tests for maintenance keeper and message flows
+- **Task**: [?] Add unit tests for maintenance keeper and message flows
 - **What**:
   - Schedule success/failure cases
   - Cancel success/failure cases
@@ -466,7 +466,7 @@ Each task includes:
 - **Dependencies**: Sections 1-2
 
 #### 7.2 Unit Tests for Duty Exemptions
-- **Task**: [ ] Add unit tests for assignment and penalty suppression
+- **Task**: [?] Add unit tests for assignment and penalty suppression
 - **What**:
   - No new inference assignment during active maintenance
   - No downtime/expiry penalty during active maintenance
