@@ -263,7 +263,7 @@ Each task includes:
 ### Section 3: Consensus Liveness Exemption in Cosmos SDK Fork
 
 #### 3.1 Patch Slashing Liveness Path
-- **Task**: [ ] Add maintenance-aware liveness exemption to the maintained Cosmos SDK fork
+- **Task**: [?] Add maintenance-aware liveness exemption to the maintained Cosmos SDK fork
 - **What**:
   - Identify the exact liveness handling path in the forked `x/slashing`
   - Add a maintenance-window check so active maintenance:
@@ -480,7 +480,7 @@ Each task includes:
 - **Dependencies**: Section 4
 
 #### 7.3 Cosmos SDK Fork Tests
-- **Task**: [ ] Add targeted tests in forked slashing/liveness code
+- **Task**: [?] Add targeted tests in forked slashing/liveness code
 - **What**:
   - Maintenance active: misses do not count
   - Maintenance active: no downtime jail/slash

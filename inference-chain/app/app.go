@@ -290,11 +290,11 @@ func New(
 	app.CollateralKeeper.SetRequiredCollateralProvider(app.InferenceKeeper)
 	app.CollateralKeeper.SetMaintenanceChecker(&app.InferenceKeeper)
 
-	// TODO(maintenance-task-3.1): Wire maintenance-aware liveness exemption into slashing keeper.
-	// Once the Cosmos SDK fork (gonka-ai/cosmos-sdk) adds SetMaintenanceChecker to x/slashing/keeper,
-	// uncomment the following lines:
-	//   maintenanceAdapter := NewMaintenanceSlashingAdapter(&app.InferenceKeeper)
-	//   app.SlashingKeeper.SetMaintenanceChecker(maintenanceAdapter)
+	// Wire maintenance-aware liveness exemption into slashing keeper.
+	// The adapter bridges inference keeper's AccAddress-based maintenance state
+	// to the slashing keeper's ConsAddress-based liveness checks.
+	maintenanceAdapter := NewMaintenanceSlashingAdapter(&app.InferenceKeeper)
+	app.SlashingKeeper.SetMaintenanceChecker(maintenanceAdapter)
 
 	app.App = appBuilder.Build(db, traceStore, baseAppOptions...)
 
