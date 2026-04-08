@@ -78,6 +78,8 @@ data class InferenceParams(
     val transferAgentAccessParams: TransferAgentAccessParams? = null,
     @SerializedName("subnet_escrow_params")
     val subnetEscrowParams: SubnetEscrowParams? = null,
+    @SerializedName("maintenance_params")
+    val maintenanceParams: MaintenanceParams? = null,
 )
 
 data class TokenomicsParams(
@@ -449,4 +451,25 @@ data class ExemptionUsageEntry(
     val accountAddress: String,
     @SerializedName("usage_count")
     val usageCount: Long,
+)
+
+// -----------------------
+// Maintenance Window Parameters
+// -----------------------
+
+data class MaintenanceParams(
+    @SerializedName("maintenance_enabled")
+    val maintenanceEnabled: Boolean = false,
+    @SerializedName("maintenance_min_schedule_lead_blocks")
+    val maintenanceMinScheduleLeadBlocks: Long = 100,
+    @SerializedName("maintenance_max_window_blocks")
+    val maintenanceMaxWindowBlocks: Long = 200,
+    @SerializedName("maintenance_max_concurrent_validators")
+    val maintenanceMaxConcurrentValidators: Int = 3,
+    @SerializedName("maintenance_max_concurrent_power_bps")
+    val maintenanceMaxConcurrentPowerBps: Int = 1000,
+    @SerializedName("maintenance_credit_cap_blocks")
+    val maintenanceCreditCapBlocks: Long = 400,
+    @SerializedName("maintenance_credit_earn_per_successful_epoch_blocks")
+    val maintenanceCreditEarnPerSuccessfulEpochBlocks: Long = 20,
 )

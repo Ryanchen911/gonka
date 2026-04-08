@@ -494,7 +494,7 @@ Each task includes:
 - **Dependencies**: Section 3
 
 #### 7.4 Testermint End-to-End Coverage
-- **Task**: [ ] Add end-to-end maintenance-window tests in Testermint
+- **Task**: [?] Add end-to-end maintenance-window tests in Testermint
 - **What**:
   - Schedule a maintenance window
   - Pause participant execution for the covered interval
