@@ -111,6 +111,7 @@ fun getLocalInferencePairs(config: ApplicationConfig): List<LocalInferencePair> 
             SERVER_TYPE_ML to getUrlForPrivatePort(portMap, 9100),
             SERVER_TYPE_ADMIN to getUrlForPrivatePort(portMap, 9200)
         )
+        val nodeManagerGrpcHostPort = portMap[9400]?.publicPort
 
         Logger.info("Creating local inference pair for $name")
         Logger.info("API URLs for ${apiContainer.names.first()}:")
@@ -141,6 +142,7 @@ fun getLocalInferencePairs(config: ApplicationConfig): List<LocalInferencePair> 
             },
             name = name,
             config = configWithName,
+            nodeManagerGrpcHostPort = nodeManagerGrpcHostPort,
         )
     }
 }
@@ -221,6 +223,7 @@ data class LocalInferencePair(
     val mock: IInferenceMock?, // Primary mock for backward compatibility
     val name: String,
     override val config: ApplicationConfig,
+    val nodeManagerGrpcHostPort: Int? = null,
     var mostRecentParams: InferenceParams? = null,
     var mostRecentEpochData: EpochResponse? = null,
 ) : HasConfig {
@@ -771,6 +774,14 @@ data class LocalInferencePair(
         try {
             api.executor.exec(listOf("sh", "-c", "pkill -f 'SUBNET_ESCROW_ID=$escrowId.*subnetctl' || true"), null)
         } catch (_: Exception) { /* ignore */ }
+    }
+
+    fun getSubnetInferenceState(proxyUrl: String, inferenceId: Long): String {
+        val result = api.executor.exec(listOf(
+            "sh", "-c",
+            "curl -sf $proxyUrl/v1/inference -H 'X-Inference-Id: $inferenceId'"
+        ), null)
+        return result.joinToString("")
     }
 
     fun sendChatCompletion(proxyUrl: String, model: String, prompt: String, stream: Boolean = false): String {

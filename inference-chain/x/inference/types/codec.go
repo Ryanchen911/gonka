@@ -36,9 +36,6 @@ func RegisterInterfaces(registry cdctypes.InterfaceRegistry) {
 		&MsgSubmitPocBatch{},
 	)
 	registry.RegisterImplementations((*sdk.Msg)(nil),
-		&MsgSubmitPocValidation{},
-	)
-	registry.RegisterImplementations((*sdk.Msg)(nil),
 		&MsgSubmitPocValidationsV2{},
 	)
 	registry.RegisterImplementations((*sdk.Msg)(nil),
@@ -60,46 +57,10 @@ func RegisterInterfaces(registry cdctypes.InterfaceRegistry) {
 		&MsgDeleteGovernanceModel{},
 	)
 	registry.RegisterImplementations((*sdk.Msg)(nil),
-		&MsgCreateTrainingTask{},
-	)
-	registry.RegisterImplementations((*sdk.Msg)(nil),
 		&MsgSubmitHardwareDiff{},
 	)
 	registry.RegisterImplementations((*sdk.Msg)(nil),
-		&MsgClaimTrainingTaskForAssignment{},
-	)
-	registry.RegisterImplementations((*sdk.Msg)(nil),
-		&MsgAssignTrainingTask{},
-	)
-	registry.RegisterImplementations((*sdk.Msg)(nil),
 		&MsgCreatePartialUpgrade{},
-	)
-	registry.RegisterImplementations((*sdk.Msg)(nil),
-		&MsgSubmitTrainingKvRecord{},
-	)
-	registry.RegisterImplementations((*sdk.Msg)(nil),
-		&MsgJoinTraining{},
-	)
-	registry.RegisterImplementations((*sdk.Msg)(nil),
-		&MsgTrainingHeartbeat{},
-	)
-	registry.RegisterImplementations((*sdk.Msg)(nil),
-		&MsgSetBarrier{},
-	)
-	registry.RegisterImplementations((*sdk.Msg)(nil),
-		&MsgJoinTrainingStatus{},
-	)
-	registry.RegisterImplementations((*sdk.Msg)(nil),
-		&MsgCreateDummyTrainingTask{},
-	)
-	registry.RegisterImplementations((*sdk.Msg)(nil),
-		&MsgAddUserToTrainingAllowList{},
-	)
-	registry.RegisterImplementations((*sdk.Msg)(nil),
-		&MsgRemoveUserFromTrainingAllowList{},
-	)
-	registry.RegisterImplementations((*sdk.Msg)(nil),
-		&MsgSetTrainingAllowList{},
 	)
 	registry.RegisterImplementations((*sdk.Msg)(nil),
 		&MsgRegisterLiquidityPool{},
