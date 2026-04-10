@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	cosmossdk_math "cosmossdk.io/math"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/productscience/inference/x/inference/types"
 )
@@ -104,6 +105,11 @@ func (k Keeper) activateMaintenanceReservation(ctx context.Context, sdkCtx sdk.C
 		return err
 	}
 
+	// Add to the active index for O(A) MaintenanceActive query
+	if err := k.MaintenanceActiveIndex.Set(ctx, reservationID); err != nil {
+		return err
+	}
+
 	// Update participant's MaintenanceState
 	participantAddr, err := sdk.AccAddressFromBech32(r.Participant)
 	if err != nil {
@@ -158,6 +164,11 @@ func (k Keeper) completeMaintenanceReservation(ctx context.Context, sdkCtx sdk.C
 		return err
 	}
 
+	// Remove from the active index
+	if err := k.MaintenanceActiveIndex.Remove(ctx, reservationID); err != nil {
+		return err
+	}
+
 	// Clear participant's active reservation reference
 	participantAddr, err := sdk.AccAddressFromBech32(r.Participant)
 	if err != nil {
@@ -196,7 +207,7 @@ func (k Keeper) checkActivationTimeConcurrency(ctx context.Context, r types.Main
 
 	// Count currently active/scheduled reservations that overlap with this window
 	concurrentCount := uint32(0)
-	var concurrentPower int64
+	concurrentPower := cosmossdk_math.ZeroInt()
 
 	scanFrom := r.StartHeight - int64(mp.MaintenanceMaxWindowBlocks)
 	if scanFrom < 0 {
@@ -222,7 +233,7 @@ func (k Keeper) checkActivationTimeConcurrency(ctx context.Context, r types.Main
 			concurrentCount++
 			otherAddr, err := sdk.AccAddressFromBech32(other.Participant)
 			if err == nil {
-				concurrentPower += k.getParticipantPower(ctx, otherAddr)
+				concurrentPower = concurrentPower.Add(k.getParticipantPower(ctx, otherAddr))
 			}
 		}
 		return false, nil
@@ -236,16 +247,19 @@ func (k Keeper) checkActivationTimeConcurrency(ctx context.Context, r types.Main
 			"concurrent count %d exceeds cap %d", concurrentCount+1, mp.MaintenanceMaxConcurrentValidators))
 	}
 
-	// Check power cap (including this participant)
+	// Check power cap (including this participant). All math is integer-only
+	// (math.Int): any string persisted to state must be deterministic across
+	// architectures, and the bps multiplication must not silently overflow.
 	participantPower := k.getParticipantPower(ctx, participantAddr)
 	totalPower := k.getTotalConsensusPower(ctx)
-	if totalPower > 0 && mp.MaintenanceMaxConcurrentPowerBps > 0 {
-		maxPower := totalPower * int64(mp.MaintenanceMaxConcurrentPowerBps) / 10000
-		if concurrentPower+participantPower > maxPower {
+	if totalPower.IsPositive() && mp.MaintenanceMaxConcurrentPowerBps > 0 {
+		maxPower := totalPower.MulRaw(int64(mp.MaintenanceMaxConcurrentPowerBps)).QuoRaw(10000)
+		used := concurrentPower.Add(participantPower)
+		if used.GT(maxPower) {
 			warnings = append(warnings, fmt.Sprintf(
-				"concurrent power %d exceeds cap %d (%.1f%% of total %d)",
-				concurrentPower+participantPower, maxPower,
-				float64(mp.MaintenanceMaxConcurrentPowerBps)/100, totalPower))
+				"concurrent power %s exceeds cap %s (cap_bps=%d total=%s)",
+				used.String(), maxPower.String(),
+				mp.MaintenanceMaxConcurrentPowerBps, totalPower.String()))
 		}
 	}
 

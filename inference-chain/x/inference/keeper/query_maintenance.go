@@ -3,6 +3,7 @@ package keeper
 import (
 	"context"
 
+	cosmossdk_math "cosmossdk.io/math"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/productscience/inference/x/inference/types"
 	"google.golang.org/grpc/codes"
@@ -63,24 +64,28 @@ func (k Keeper) MaintenanceActive(ctx context.Context, req *types.QueryMaintenan
 
 	var activeReservations []*types.MaintenanceReservation
 
-	iter, err := k.MaintenanceStates.Iterate(ctx, nil)
+	// Iterate the active-reservation index instead of the full participant
+	// state map. This is O(A) where A is the number of currently active
+	// reservations (bounded by MaintenanceMaxConcurrentValidators).
+	iter, err := k.MaintenanceActiveIndex.Iterate(ctx, nil)
 	if err != nil {
-		return nil, status.Error(codes.Internal, "failed to iterate maintenance states")
+		return nil, status.Error(codes.Internal, "failed to iterate active maintenance index")
 	}
 	defer iter.Close()
 
 	for ; iter.Valid(); iter.Next() {
-		state, err := iter.Value()
+		reservationID, err := iter.Key()
 		if err != nil {
 			continue
 		}
-		if state.ActiveReservationId == 0 {
+		r, found := k.GetMaintenanceReservation(ctx, reservationID)
+		if !found {
 			continue
 		}
-		r, found := k.GetMaintenanceReservation(ctx, state.ActiveReservationId)
-		if found && r.Status == types.MaintenanceReservationStatus_MAINTENANCE_RESERVATION_STATUS_ACTIVE {
-			activeReservations = append(activeReservations, &r)
+		if r.Status != types.MaintenanceReservationStatus_MAINTENANCE_RESERVATION_STATUS_ACTIVE {
+			continue
 		}
+		activeReservations = append(activeReservations, &r)
 	}
 
 	return &types.QueryMaintenanceActiveResponse{
@@ -151,7 +156,7 @@ func (k Keeper) MaintenanceConcurrency(ctx context.Context, req *types.QueryMain
 	scanTo := targetHeight
 
 	concurrentCount := uint32(0)
-	var concurrentPower int64
+	concurrentPower := cosmossdk_math.ZeroInt()
 
 	_ = k.IterateMaintenanceStartHeightRange(ctx, scanFrom, scanTo, func(reservationID uint64) (bool, error) {
 		r, found := k.GetMaintenanceReservation(ctx, reservationID)
@@ -168,17 +173,23 @@ func (k Keeper) MaintenanceConcurrency(ctx context.Context, req *types.QueryMain
 			concurrentCount++
 			rAddr, err := sdk.AccAddressFromBech32(r.Participant)
 			if err == nil {
-				concurrentPower += k.getParticipantPower(ctx, rAddr)
+				concurrentPower = concurrentPower.Add(k.getParticipantPower(ctx, rAddr))
 			}
 		}
 		return false, nil
 	})
 
-	// Express power as basis points of total
+	// Express power as basis points of total. All integer math; clamp to int64
+	// at the response boundary (bps fits comfortably in int64).
 	totalPower := k.getTotalConsensusPower(ctx)
 	var concurrentPowerBps int64
-	if totalPower > 0 {
-		concurrentPowerBps = concurrentPower * 10000 / totalPower
+	if totalPower.IsPositive() {
+		bps := concurrentPower.MulRaw(10000).Quo(totalPower)
+		if bps.IsInt64() {
+			concurrentPowerBps = bps.Int64()
+		} else {
+			concurrentPowerBps = 10000 // saturate
+		}
 	}
 
 	return &types.QueryMaintenanceConcurrencyResponse{

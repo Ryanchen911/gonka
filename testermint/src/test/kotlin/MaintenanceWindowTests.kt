@@ -1,4 +1,6 @@
+import com.github.dockerjava.api.DockerClient
 import com.github.dockerjava.core.DockerClientBuilder
+import com.productscience.LocalCluster
 import com.productscience.LocalInferencePair
 import com.productscience.data.*
 import com.productscience.getRawContainers
@@ -19,15 +21,50 @@ import org.tinylog.kotlin.Logger
 class MaintenanceWindowTests : TestermintTest() {
 
     /**
+     * Lazily-instantiated Docker client shared by all node-container helpers
+     * in this class. Building a DockerClient is heavy, so we reuse one per
+     * test class lifecycle instead of constructing one per call.
+     */
+    private val dockerClient: DockerClient by lazy { DockerClientBuilder.getInstance().build() }
+
+    /**
+     * Default maintenance params used by most tests. Individual tests can
+     * override fields via `enableMaintenance(..., overrides = { copy(...) })`.
+     */
+    private val defaultMaintenanceParams = MaintenanceParams(
+        maintenanceEnabled = true,
+        maintenanceMinScheduleLeadBlocks = 5,
+        maintenanceMaxWindowBlocks = 50,
+        maintenanceMaxConcurrentValidators = 3,
+        maintenanceMaxConcurrentPowerBps = 5000, // 50%
+        maintenanceCreditCapBlocks = 200,
+        maintenanceCreditEarnPerSuccessfulEpochBlocks = 50,
+    )
+
+    /**
+     * Submit a governance proposal that enables maintenance with the given
+     * params (defaults to [defaultMaintenanceParams]). Returns the resulting
+     * params for downstream assertions/inspection.
+     */
+    private fun enableMaintenance(
+        cluster: LocalCluster,
+        genesis: LocalInferencePair,
+        params: MaintenanceParams = defaultMaintenanceParams,
+    ): InferenceParams {
+        val current = genesis.getParams()
+        val modified = current.copy(maintenanceParams = params)
+        genesis.runProposal(cluster, UpdateParams(params = modified))
+        return genesis.getParams()
+    }
+
+    /**
      * Stop the chain node container for a given pair.
      * This causes the validator to stop signing blocks (missing signatures).
      */
     private fun stopNodeContainer(pair: LocalInferencePair) {
         val nodeContainer = getRawContainers(pair.config).getNode(pair.name)
             ?: error("Node container not found for ${pair.name}")
-        DockerClientBuilder.getInstance().build().use { dockerClient ->
-            dockerClient.stopContainerCmd(nodeContainer.id).exec()
-        }
+        dockerClient.stopContainerCmd(nodeContainer.id).exec()
         Logger.info("Stopped node container for ${pair.name}")
     }
 
@@ -37,10 +74,8 @@ class MaintenanceWindowTests : TestermintTest() {
     private fun startNodeContainer(pair: LocalInferencePair) {
         val nodeContainer = getRawContainers(pair.config).getNode(pair.name)
             ?: error("Node container not found for ${pair.name}")
-        DockerClientBuilder.getInstance().build().use { dockerClient ->
-            if (nodeContainer.state != "running") {
-                dockerClient.startContainerCmd(nodeContainer.id).exec()
-            }
+        if (nodeContainer.state != "running") {
+            dockerClient.startContainerCmd(nodeContainer.id).exec()
         }
         Logger.info("Started node container for ${pair.name}")
     }
@@ -53,34 +88,13 @@ class MaintenanceWindowTests : TestermintTest() {
     fun `enable maintenance windows via governance proposal`() {
         val (cluster, genesis) = initCluster()
 
-        logSection("Getting current params")
-        val params = genesis.getParams()
-        Logger.info("Current maintenance params: ${params.maintenanceParams}")
-
-        // Enable maintenance with test-friendly parameters:
-        // - short lead time (5 blocks instead of 100)
-        // - reasonable window (20 blocks)
-        // - generous credit (give 50 blocks per epoch so credit accumulates fast)
-        val modifiedParams = params.copy(
-            maintenanceParams = MaintenanceParams(
-                maintenanceEnabled = true,
-                maintenanceMinScheduleLeadBlocks = 5,
-                maintenanceMaxWindowBlocks = 50,
-                maintenanceMaxConcurrentValidators = 3,
-                maintenanceMaxConcurrentPowerBps = 5000, // 50%
-                maintenanceCreditCapBlocks = 200,
-                maintenanceCreditEarnPerSuccessfulEpochBlocks = 50,
-            )
-        )
-
         logSection("Submitting governance proposal to enable maintenance")
-        genesis.runProposal(cluster, UpdateParams(params = modifiedParams))
+        val newParams = enableMaintenance(cluster, genesis)
 
         logSection("Verifying maintenance params are updated")
-        val newParams = genesis.getParams()
-        assertThat(newParams.maintenanceParams).isNotNull
-        assertThat(newParams.maintenanceParams!!.maintenanceEnabled).isTrue()
-        assertThat(newParams.maintenanceParams!!.maintenanceMinScheduleLeadBlocks).isEqualTo(5)
+        val mp = checkNotNull(newParams.maintenanceParams) { "maintenanceParams was null after governance update" }
+        assertThat(mp.maintenanceEnabled).isTrue()
+        assertThat(mp.maintenanceMinScheduleLeadBlocks).isEqualTo(defaultMaintenanceParams.maintenanceMinScheduleLeadBlocks)
         Logger.info("Maintenance successfully enabled via governance")
 
         genesis.markNeedsReboot()
@@ -99,20 +113,7 @@ class MaintenanceWindowTests : TestermintTest() {
 
         // Step 1: Enable maintenance with test-friendly params via governance
         logSection("Step 1: Enable maintenance via governance")
-        val params = genesis.getParams()
-        val modifiedParams = params.copy(
-            maintenanceParams = MaintenanceParams(
-                maintenanceEnabled = true,
-                maintenanceMinScheduleLeadBlocks = 5,
-                maintenanceMaxWindowBlocks = 50,
-                maintenanceMaxConcurrentValidators = 3,
-                maintenanceMaxConcurrentPowerBps = 5000,
-                maintenanceCreditCapBlocks = 200,
-                maintenanceCreditEarnPerSuccessfulEpochBlocks = 50,
-            )
-        )
-        genesis.runProposal(cluster, UpdateParams(params = modifiedParams))
-        val updatedParams = genesis.getParams()
+        val updatedParams = enableMaintenance(cluster, genesis)
         assertThat(updatedParams.maintenanceParams?.maintenanceEnabled).isTrue()
 
         // Step 2: Earn maintenance credit by completing epochs
@@ -194,11 +195,10 @@ class MaintenanceWindowTests : TestermintTest() {
         logSection("Step 4: Verify join1 is BONDED before maintenance")
         val validatorsBefore = genesis.node.getValidators()
         val join1ValPubKey = join1.node.getValidatorInfo().key
-        val join1ValBefore = validatorsBefore.validators.find {
-            it.consensusPubkey.value == join1ValPubKey
-        }
-        assertThat(join1ValBefore).isNotNull
-        assertThat(join1ValBefore!!.statusEnum).isEqualTo(StakeValidatorStatus.BONDED)
+        val join1ValBefore = checkNotNull(
+            validatorsBefore.validators.find { it.consensusPubkey.value == join1ValPubKey }
+        ) { "join1 validator not found in validator set before maintenance" }
+        assertThat(join1ValBefore.statusEnum).isEqualTo(StakeValidatorStatus.BONDED)
         Logger.info("Join1 validator status before maintenance: ${join1ValBefore.status}")
 
         // Step 5: Wait for maintenance window to activate
@@ -227,11 +227,10 @@ class MaintenanceWindowTests : TestermintTest() {
         // Step 8: Verify join1 is NOT jailed (the key assertion!)
         logSection("Step 8: Verifying join1 was NOT jailed during maintenance")
         val validatorsAfter = genesis.node.getValidators()
-        val join1ValAfter = validatorsAfter.validators.find {
-            it.consensusPubkey.value == join1ValPubKey
-        }
-        assertThat(join1ValAfter).isNotNull
-        assertThat(join1ValAfter!!.statusEnum)
+        val join1ValAfter = checkNotNull(
+            validatorsAfter.validators.find { it.consensusPubkey.value == join1ValPubKey }
+        ) { "join1 validator not found in validator set after maintenance" }
+        assertThat(join1ValAfter.statusEnum)
             .describedAs("Join1 should remain BONDED — maintenance window should have prevented jailing")
             .isEqualTo(StakeValidatorStatus.BONDED)
         Logger.info("SUCCESS: Join1 validator is still BONDED after being offline during maintenance window!")
@@ -254,21 +253,18 @@ class MaintenanceWindowTests : TestermintTest() {
     fun `maintenance window scheduling rejected during epoch-critical phases`() {
         val (cluster, genesis) = initCluster()
 
-        // Enable maintenance
+        // Enable maintenance with longer-window/larger-credit settings to make
+        // the PoC overlap window easy to construct.
         logSection("Enabling maintenance via governance")
-        val params = genesis.getParams()
-        val modifiedParams = params.copy(
-            maintenanceParams = MaintenanceParams(
-                maintenanceEnabled = true,
+        enableMaintenance(
+            cluster, genesis,
+            params = defaultMaintenanceParams.copy(
                 maintenanceMinScheduleLeadBlocks = 2,
                 maintenanceMaxWindowBlocks = 100,
-                maintenanceMaxConcurrentValidators = 3,
-                maintenanceMaxConcurrentPowerBps = 5000,
                 maintenanceCreditCapBlocks = 500,
                 maintenanceCreditEarnPerSuccessfulEpochBlocks = 100,
             )
         )
-        genesis.runProposal(cluster, UpdateParams(params = modifiedParams))
 
         // Earn some credit
         genesis.waitForNextEpoch()
@@ -325,19 +321,7 @@ class MaintenanceWindowTests : TestermintTest() {
 
         // Enable maintenance
         logSection("Enabling maintenance via governance")
-        val params = genesis.getParams()
-        val modifiedParams = params.copy(
-            maintenanceParams = MaintenanceParams(
-                maintenanceEnabled = true,
-                maintenanceMinScheduleLeadBlocks = 5,
-                maintenanceMaxWindowBlocks = 50,
-                maintenanceMaxConcurrentValidators = 3,
-                maintenanceMaxConcurrentPowerBps = 5000,
-                maintenanceCreditCapBlocks = 200,
-                maintenanceCreditEarnPerSuccessfulEpochBlocks = 50,
-            )
-        )
-        genesis.runProposal(cluster, UpdateParams(params = modifiedParams))
+        enableMaintenance(cluster, genesis)
 
         // Earn credit
         genesis.waitForNextEpoch()
@@ -399,8 +383,8 @@ class MaintenanceWindowTests : TestermintTest() {
         val status: MaintenanceStatusResponse = genesis.node.execAndParse(
             listOf("query", "inference", "maintenance-status", join1Address)
         )
-        assertThat(status.scheduledReservation).isNotNull
-        val reservationId = status.scheduledReservation!!.reservationId
+        val scheduled = checkNotNull(status.scheduledReservation) { "scheduled reservation missing after schedule tx" }
+        val reservationId = scheduled.reservationId
         Logger.info("Reservation ID to cancel: $reservationId")
 
         // Cancel the maintenance window

@@ -16,6 +16,13 @@ func (k msgServer) ScheduleMaintenance(goCtx context.Context, msg *types.MsgSche
 	sdkCtx := sdk.UnwrapSDKContext(goCtx)
 	blockHeight := sdkCtx.BlockHeight()
 
+	// Authorization: only the participant themselves may schedule their own
+	// maintenance window. Without this check, anyone could drain another
+	// participant's credit and force them into maintenance.
+	if msg.Creator != msg.Participant {
+		return nil, types.ErrInvalidPermission
+	}
+
 	// Check maintenance is enabled
 	mp := k.GetMaintenanceParams(goCtx)
 	if mp == nil || !mp.MaintenanceEnabled {
@@ -99,17 +106,20 @@ func (k msgServer) ScheduleMaintenance(goCtx context.Context, msg *types.MsgSche
 		return nil, err
 	}
 
-	// Add transition schedule entries for BeginBlock lifecycle
+	// Add transition schedule entries for BeginBlock lifecycle.
+	// Window covers [startHeight, startHeight + durationBlocks - 1] inclusive,
+	// so the COMPLETE transition must fire at (startHeight + durationBlocks),
+	// the block AFTER the last covered block. Otherwise the reservation would
+	// be deactivated one block early and the effective active duration would
+	// be (DurationBlocks - 1).
 	activateType := uint32(types.MaintenanceTransitionType_MAINTENANCE_TRANSITION_TYPE_ACTIVATE)
 	completeType := uint32(types.MaintenanceTransitionType_MAINTENANCE_TRANSITION_TYPE_COMPLETE)
-	// Window covers [startHeight, startHeight + durationBlocks - 1] inclusive.
-	// The COMPLETE transition fires at the block after the last covered block.
-	endHeight := msg.StartHeight + int64(msg.DurationBlocks) - 1
+	completeHeight := msg.StartHeight + int64(msg.DurationBlocks)
 
 	if err := k.SetMaintenanceTransition(goCtx, msg.StartHeight, reservationID, activateType); err != nil {
 		return nil, err
 	}
-	if err := k.SetMaintenanceTransition(goCtx, endHeight, reservationID, completeType); err != nil {
+	if err := k.SetMaintenanceTransition(goCtx, completeHeight, reservationID, completeType); err != nil {
 		return nil, err
 	}
 

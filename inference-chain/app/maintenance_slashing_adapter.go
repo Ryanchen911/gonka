@@ -23,32 +23,20 @@ func NewMaintenanceSlashingAdapter(k *keeper.Keeper) *MaintenanceSlashingAdapter
 
 // IsValidatorInActiveMaintenance checks if the validator identified by its
 // consensus address is currently in an active maintenance window.
-// It converts ConsAddress -> ValAddress -> AccAddress to look up maintenance state.
+//
+// This is on the slashing hot path: it is invoked for every validator that
+// missed a block, on every block. Implementation must be O(1) — never iterate
+// the validator set here.
 func (a *MaintenanceSlashingAdapter) IsValidatorInActiveMaintenance(ctx context.Context, consAddr sdk.ConsAddress) bool {
-	// In Gonka, the validator operator address and participant address share the
-	// same underlying bytes (AccAddress == ValAddress byte-wise), so we can
-	// convert ConsAddress to AccAddress via the staking module's validator lookup.
-	validators, err := a.inferenceKeeper.Staking.GetAllValidators(ctx)
+	// O(1) lookup of the validator by consensus address.
+	v, err := a.inferenceKeeper.Staking.GetValidatorByConsAddr(ctx, consAddr)
 	if err != nil {
 		return false
 	}
-
-	for _, v := range validators {
-		pk, err := v.ConsPubKey()
-		if err != nil {
-			continue
-		}
-		if sdk.ConsAddress(pk.Address()).Equals(consAddr) {
-			// Found the validator — decode the bech32 operator address to AccAddress.
-			// v.GetOperator() returns a bech32 string; we must decode it properly.
-			valAddr, err := sdk.ValAddressFromBech32(v.GetOperator())
-			if err != nil {
-				return false
-			}
-			accAddr := sdk.AccAddress(valAddr)
-			return a.inferenceKeeper.IsParticipantInActiveMaintenance(ctx, accAddr)
-		}
+	valAddr, err := sdk.ValAddressFromBech32(v.GetOperator())
+	if err != nil {
+		return false
 	}
-
-	return false
+	// In Gonka, AccAddress and ValAddress share the same underlying bytes.
+	return a.inferenceKeeper.IsParticipantInActiveMaintenance(ctx, sdk.AccAddress(valAddr))
 }

@@ -161,9 +161,14 @@ func (k Keeper) iterateStartHeightPrefix(ctx context.Context, height int64, fn f
 
 // --- Credit accrual ---
 
-// grantMaintenanceCredit grants maintenance credit to a participant after a successful reward claim.
-// Credit is not granted if maintenance was activated for that participant in the claimed epoch.
-func (k msgServer) grantMaintenanceCredit(ctx context.Context, participant string, epochIndex uint64) error {
+// GrantMaintenanceCredit grants maintenance credit to a participant after a
+// successful reward claim. Credit is not granted if maintenance was activated
+// for that participant in the claimed epoch.
+//
+// Lives on Keeper (not msgServer) so other modules and BeginBlock/EndBlock
+// hooks can reuse it. Returns the bech32 decode error to the caller instead
+// of swallowing it — the caller is responsible for logging.
+func (k Keeper) GrantMaintenanceCredit(ctx context.Context, participant string, epochIndex uint64) error {
 	mp := k.GetMaintenanceParams(ctx)
 	if mp == nil || !mp.MaintenanceEnabled || mp.MaintenanceCreditEarnPerSuccessfulEpochBlocks == 0 {
 		return nil
@@ -171,7 +176,7 @@ func (k msgServer) grantMaintenanceCredit(ctx context.Context, participant strin
 
 	participantAddr, err := sdk.AccAddressFromBech32(participant)
 	if err != nil {
-		return nil
+		return fmt.Errorf("invalid participant address %q: %w", participant, err)
 	}
 
 	state := k.GetOrCreateMaintenanceState(ctx, participantAddr)
@@ -225,9 +230,18 @@ func (k Keeper) IsParticipantAddressInActiveMaintenance(ctx context.Context, add
 // filterOutMaintenanceParticipants removes group members that are currently in
 // an active maintenance window. Used by GetRandomExecutor to prevent assigning
 // new inference work to maintenance-covered participants.
+//
+// Implementation: build a single set of currently-active maintenance addresses
+// (bounded by MaintenanceMaxConcurrentValidators) up-front, then O(1) lookup
+// per member. This avoids one collection read per member.
 func (k Keeper) filterOutMaintenanceParticipants(ctx context.Context, members []*group.GroupMember) []*group.GroupMember {
 	mp := k.GetMaintenanceParams(ctx)
 	if mp == nil || !mp.MaintenanceEnabled {
+		return members
+	}
+
+	activeAddrs := k.collectActiveMaintenanceAddresses(ctx)
+	if len(activeAddrs) == 0 {
 		return members
 	}
 
@@ -236,7 +250,7 @@ func (k Keeper) filterOutMaintenanceParticipants(ctx context.Context, members []
 		if member == nil || member.Member == nil {
 			continue
 		}
-		if k.IsParticipantAddressInActiveMaintenance(ctx, member.Member.Address) {
+		if _, inMaintenance := activeAddrs[member.Member.Address]; inMaintenance {
 			k.LogDebug("Excluding maintenance-covered participant from assignment",
 				types.Maintenance, "participant", member.Member.Address)
 			continue
@@ -244,4 +258,31 @@ func (k Keeper) filterOutMaintenanceParticipants(ctx context.Context, members []
 		filtered = append(filtered, member)
 	}
 	return filtered
+}
+
+// collectActiveMaintenanceAddresses returns the bech32 addresses of every
+// participant currently in an ACTIVE maintenance window. The result size is
+// bounded by MaintenanceMaxConcurrentValidators.
+func (k Keeper) collectActiveMaintenanceAddresses(ctx context.Context) map[string]struct{} {
+	addrs := make(map[string]struct{})
+	iter, err := k.MaintenanceActiveIndex.Iterate(ctx, nil)
+	if err != nil {
+		return addrs
+	}
+	defer iter.Close()
+	for ; iter.Valid(); iter.Next() {
+		reservationID, err := iter.Key()
+		if err != nil {
+			continue
+		}
+		r, found := k.GetMaintenanceReservation(ctx, reservationID)
+		if !found {
+			continue
+		}
+		if r.Status != types.MaintenanceReservationStatus_MAINTENANCE_RESERVATION_STATUS_ACTIVE {
+			continue
+		}
+		addrs[r.Participant] = struct{}{}
+	}
+	return addrs
 }

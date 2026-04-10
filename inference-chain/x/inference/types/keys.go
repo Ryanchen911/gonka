@@ -82,6 +82,9 @@ var (
 	MaintenanceStatesPrefix                = collections.NewPrefix(55)
 	MaintenanceTransitionsPrefix           = collections.NewPrefix(56)
 	MaintenanceStartHeightIndexPrefix      = collections.NewPrefix(57)
+	// Index of currently-active maintenance reservations (key = reservationID).
+	// Avoids O(M) full-scan of MaintenanceStates in the MaintenanceActive query.
+	MaintenanceActiveIndexPrefix           = collections.NewPrefix(58)
 	ParamsKey                              = []byte("p_inference")
 )
 

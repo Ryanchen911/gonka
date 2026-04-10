@@ -143,8 +143,11 @@ func (ms msgServer) finishSettle(ctx sdk.Context, settleAmount *types.SettleAmou
 	}
 
 	// Grant maintenance credit for this successfully claimed epoch
-	if err := ms.grantMaintenanceCredit(ctx, settleAmount.Participant, settleAmount.EpochIndex); err != nil {
-		ms.LogError("Error granting maintenance credit", types.Maintenance, "error", err)
+	if err := ms.GrantMaintenanceCredit(ctx, settleAmount.Participant, settleAmount.EpochIndex); err != nil {
+		ms.LogError("Error granting maintenance credit", types.Maintenance,
+			"participant", settleAmount.Participant,
+			"epoch", settleAmount.EpochIndex,
+			"error", err)
 	}
 }
 

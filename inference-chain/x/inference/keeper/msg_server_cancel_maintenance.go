@@ -54,12 +54,14 @@ func (k msgServer) CancelMaintenance(goCtx context.Context, msg *types.MsgCancel
 		return nil, err
 	}
 
-	// Remove transition schedule entries (endHeight must match scheduling: startHeight + duration - 1)
-	endHeight := r.StartHeight + int64(r.DurationBlocks) - 1
+	// Remove transition schedule entries. The COMPLETE transition height must
+	// match what ScheduleMaintenance wrote: startHeight + DurationBlocks
+	// (the block AFTER the last covered block).
+	completeHeight := r.StartHeight + int64(r.DurationBlocks)
 	if err := k.DeleteMaintenanceTransition(goCtx, r.StartHeight, r.ReservationId); err != nil {
 		return nil, fmt.Errorf("failed to delete activate transition: %w", err)
 	}
-	if err := k.DeleteMaintenanceTransition(goCtx, endHeight, r.ReservationId); err != nil {
+	if err := k.DeleteMaintenanceTransition(goCtx, completeHeight, r.ReservationId); err != nil {
 		return nil, fmt.Errorf("failed to delete complete transition: %w", err)
 	}
 

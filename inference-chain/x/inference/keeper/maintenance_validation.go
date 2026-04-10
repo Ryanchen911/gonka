@@ -3,10 +3,10 @@ package keeper
 import (
 	"context"
 	"fmt"
-	"math"
 
 	cosmossdk_math "cosmossdk.io/math"
 	sdk "github.com/cosmos/cosmos-sdk/types"
+	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
 	"github.com/productscience/inference/x/inference/types"
 )
 
@@ -75,12 +75,14 @@ func (k Keeper) checkEpochPhaseOverlap(ctx context.Context, startHeight int64, d
 
 // checkConcurrencyLimits verifies that adding a new reservation does not exceed
 // concurrent participant count or power caps at scheduling time.
+//
+// All power math is done in math.Int (cosmossdk_math.Int) to avoid int64
+// overflow on either token aggregation or the bps multiplication.
 func (k Keeper) checkConcurrencyLimits(ctx context.Context, startHeight int64, durationBlocks uint64, participant sdk.AccAddress, mp *types.MaintenanceParams) error {
 	endHeight := startHeight + int64(durationBlocks) - 1
 
-	// Count concurrent reservations that overlap with [startHeight, endHeight]
 	concurrentCount := uint32(0)
-	var concurrentPower int64
+	concurrentPower := cosmossdk_math.ZeroInt()
 
 	// Get this participant's power for the power cap check
 	participantPower := k.getParticipantPower(ctx, participant)
@@ -113,7 +115,7 @@ func (k Keeper) checkConcurrencyLimits(ctx context.Context, startHeight int64, d
 			concurrentCount++
 			rAddr, err := sdk.AccAddressFromBech32(r.Participant)
 			if err == nil {
-				concurrentPower += k.getParticipantPower(ctx, rAddr)
+				concurrentPower = concurrentPower.Add(k.getParticipantPower(ctx, rAddr))
 			}
 		}
 		return false, nil
@@ -127,16 +129,25 @@ func (k Keeper) checkConcurrencyLimits(ctx context.Context, startHeight int64, d
 		return types.ErrMaintenanceConcurrentCountExceeded
 	}
 
-	// Check power cap (including this participant's power)
+	// Check power cap (including this participant's power) using integer math.
 	totalPower := k.getTotalConsensusPower(ctx)
-	if totalPower > 0 && mp.MaintenanceMaxConcurrentPowerBps > 0 {
-		maxPower := totalPower * int64(mp.MaintenanceMaxConcurrentPowerBps) / 10000
-		if concurrentPower+participantPower > maxPower {
+	if totalPower.IsPositive() && mp.MaintenanceMaxConcurrentPowerBps > 0 {
+		maxPower := totalPower.MulRaw(int64(mp.MaintenanceMaxConcurrentPowerBps)).QuoRaw(10000)
+		if concurrentPower.Add(participantPower).GT(maxPower) {
 			return types.ErrMaintenanceConcurrentPowerExceeded
 		}
 	}
 
 	return nil
+}
+
+// validatorPower returns the consensus power of v as a math.Int. Using
+// TokensFromConsensusPower's inverse here would lose precision; instead we
+// just return v.Tokens, which is the effective bonded-token weight that
+// underlies consensus power. The caller compares this against bps of the
+// total bonded tokens, so the units are consistent.
+func validatorPower(v stakingtypes.Validator) cosmossdk_math.Int {
+	return v.Tokens
 }
 
 // checkParticipantOverlap checks that the proposed window does not overlap
@@ -181,56 +192,34 @@ func (k Keeper) checkParticipantOverlap(ctx context.Context, participant sdk.Acc
 	return nil
 }
 
-// safeTokensToInt64 safely converts a validator's Tokens (math.Int) to int64.
-// Returns 0 if the value overflows int64.
-func safeTokensToInt64(tokens cosmossdk_math.Int) int64 {
-	if !tokens.IsInt64() {
-		return 0
+// getParticipantPower returns the consensus power (in bonded-token units, as
+// math.Int) for a participant. Returns ZeroInt if the participant is not a
+// validator. This is an O(1) lookup via the staking keeper — no full
+// validator-set scan.
+func (k Keeper) getParticipantPower(ctx context.Context, participant sdk.AccAddress) cosmossdk_math.Int {
+	// In Gonka, the participant account address bytes match the validator
+	// operator address bytes, so we can convert directly.
+	v, err := k.Staking.GetValidator(ctx, sdk.ValAddress(participant))
+	if err != nil {
+		return cosmossdk_math.ZeroInt()
 	}
-	return tokens.Int64()
+	return validatorPower(v)
 }
 
-// getParticipantPower returns the consensus power for a participant.
-// Returns 0 if the participant is not a validator or power cannot be determined.
-func (k Keeper) getParticipantPower(ctx context.Context, participant sdk.AccAddress) int64 {
-	validators, err := k.Staking.GetAllValidators(ctx)
+// getTotalConsensusPower returns the total bonded-token power across all
+// validators as a math.Int. Uses GetLastTotalPower (which returns the staking
+// module's cached LastTotalPower in *consensus power* units, then re-scales
+// back to bonded-token units to keep units consistent with getParticipantPower).
+//
+// We multiply by DefaultPowerReduction to convert "consensus power units" back
+// to "bonded-token units" so that the bps comparison in checkConcurrencyLimits
+// is unit-consistent: both sides are bonded-token amounts.
+func (k Keeper) getTotalConsensusPower(ctx context.Context) cosmossdk_math.Int {
+	totalConsPower, err := k.Staking.GetLastTotalPower(ctx)
 	if err != nil {
-		return 0
+		return cosmossdk_math.ZeroInt()
 	}
-	participantStr := participant.String()
-	for _, v := range validators {
-		// Convert operator address to account address for comparison
-		accAddr, err := sdk.AccAddressFromBech32(v.OperatorAddress)
-		if err != nil {
-			// Try direct comparison as bech32 strings may use different prefixes
-			valAddr, err2 := sdk.ValAddressFromBech32(v.OperatorAddress)
-			if err2 != nil {
-				continue
-			}
-			accAddr = sdk.AccAddress(valAddr)
-		}
-		if accAddr.String() == participantStr {
-			return safeTokensToInt64(v.Tokens)
-		}
-	}
-	return 0
-}
-
-// getTotalConsensusPower returns the total consensus power across all validators.
-// Uses saturating addition to prevent overflow.
-func (k Keeper) getTotalConsensusPower(ctx context.Context) int64 {
-	validators, err := k.Staking.GetAllValidators(ctx)
-	if err != nil {
-		return 0
-	}
-	var total int64
-	for _, v := range validators {
-		power := safeTokensToInt64(v.Tokens)
-		// Saturating addition: cap at math.MaxInt64 instead of wrapping
-		if power > 0 && total > math.MaxInt64-power {
-			return math.MaxInt64
-		}
-		total += power
-	}
-	return total
+	// LastTotalPower is stored in consensus-power units; reverse the
+	// PowerReduction to get bonded-token units.
+	return totalConsPower.Mul(sdk.DefaultPowerReduction)
 }

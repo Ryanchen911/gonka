@@ -3,7 +3,9 @@ package keeper_test
 import (
 	"testing"
 
+	cosmossdk_math "cosmossdk.io/math"
 	sdk "github.com/cosmos/cosmos-sdk/types"
+	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 
@@ -23,8 +25,12 @@ func setupMaintenanceTest(t *testing.T) (keeper.Keeper, types.MsgServer, sdk.Con
 
 	// Allow AccountPermission checks to pass
 	mocks.AccountKeeper.EXPECT().HasAccount(gomock.Any(), gomock.Any()).Return(true).AnyTimes()
-	// Concurrency checks call GetAllValidators — return empty (no power constraints)
-	mocks.StakingKeeper.EXPECT().GetAllValidators(gomock.Any()).Return(nil, nil).AnyTimes()
+	// Concurrency checks now use O(1) staking lookups. Return "validator not found"
+	// (zero power) and zero total power so no concurrency cap is hit by default.
+	mocks.StakingKeeper.EXPECT().GetValidator(gomock.Any(), gomock.Any()).
+		Return(stakingtypes.Validator{}, stakingtypes.ErrNoValidatorFound).AnyTimes()
+	mocks.StakingKeeper.EXPECT().GetLastTotalPower(gomock.Any()).
+		Return(cosmossdk_math.ZeroInt(), nil).AnyTimes()
 
 	// Set block height so we have room for scheduling
 	ctx = ctx.WithBlockHeight(100)
@@ -378,8 +384,15 @@ func TestLifecycle_ActivateAndComplete(t *testing.T) {
 	require.Equal(t, uint64(0), state.ScheduledReservationId)
 
 	// Process at end height (completion).
-	// Window covers [500, 549] inclusive (50 blocks), so COMPLETE transition fires at 549.
-	completeCtx := ctx.WithBlockHeight(549) // 500 + 50 - 1
+	// Window covers [500, 549] inclusive (50 blocks), so the COMPLETE transition
+	// fires at 550 (the block AFTER the last covered block). This guarantees
+	// the active duration is exactly DurationBlocks blocks.
+	lastActiveCtx := ctx.WithBlockHeight(549)
+	require.NoError(t, k.ProcessMaintenanceTransitions(lastActiveCtx))
+	require.True(t, k.IsParticipantInActiveMaintenance(lastActiveCtx, addr),
+		"participant must still be active on the final covered block")
+
+	completeCtx := ctx.WithBlockHeight(550) // 500 + 50
 	require.NoError(t, k.ProcessMaintenanceTransitions(completeCtx))
 
 	r, found = k.GetMaintenanceReservation(completeCtx, resp.ReservationId)
@@ -599,8 +612,8 @@ func TestIsParticipantInActiveMaintenance(t *testing.T) {
 	require.NoError(t, k.ProcessMaintenanceTransitions(activateCtx))
 	require.True(t, k.IsParticipantInActiveMaintenance(activateCtx, addr))
 
-	// Complete at block 549 (window covers [500, 549])
-	completeCtx := ctx.WithBlockHeight(549)
+	// Window covers [500, 549] (50 blocks); COMPLETE fires at 550.
+	completeCtx := ctx.WithBlockHeight(550)
 	require.NoError(t, k.ProcessMaintenanceTransitions(completeCtx))
 	require.False(t, k.IsParticipantInActiveMaintenance(completeCtx, addr))
 }
