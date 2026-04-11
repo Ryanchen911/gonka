@@ -1109,6 +1109,7 @@ type ModuleOutputs struct {
 	InferenceKeeper keeper.Keeper
 	Module          appmodule.AppModule
 	Hooks           stakingtypes.StakingHooksWrapper
+	BlsHooks        blstypes.BlsHooksWrapper
 }
 
 func ProvideModule(in ModuleInputs) ModuleOutputs {
@@ -1151,6 +1152,7 @@ func ProvideModule(in ModuleInputs) ModuleOutputs {
 		InferenceKeeper: k,
 		Module:          m,
 		Hooks:           stakingtypes.StakingHooksWrapper{StakingHooks: StakingHooksLogger{}},
+		BlsHooks:        blstypes.BlsHooksWrapper{BlsHooks: NewBlsHooks(k)},
 	}
 }
 

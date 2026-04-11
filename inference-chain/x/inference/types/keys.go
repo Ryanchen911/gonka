@@ -76,15 +76,18 @@ var (
 	SubnetEscrowEpochCountPrefix           = collections.NewPrefix(50)
 	SubnetHostEpochStatsPrefix             = collections.NewPrefix(51)
 	SubnetEscrowsByEpochPrefix             = collections.NewPrefix(52)
+	BridgeMintRefundsPrefix                = collections.NewPrefix(53)
+	BridgeWithdrawalRefundsPrefix          = collections.NewPrefix(54)
+	BridgeWithdrawalTokenRefsPrefix        = collections.NewPrefix(55)
 	// Maintenance window collections
-	MaintenanceReservationsPrefix          = collections.NewPrefix(53)
-	MaintenanceReservationCounterPrefix    = collections.NewPrefix(54)
-	MaintenanceStatesPrefix                = collections.NewPrefix(55)
-	MaintenanceTransitionsPrefix           = collections.NewPrefix(56)
-	MaintenanceStartHeightIndexPrefix      = collections.NewPrefix(57)
+	MaintenanceReservationsPrefix          = collections.NewPrefix(56)
+	MaintenanceReservationCounterPrefix    = collections.NewPrefix(57)
+	MaintenanceStatesPrefix                = collections.NewPrefix(58)
+	MaintenanceTransitionsPrefix           = collections.NewPrefix(59)
+	MaintenanceStartHeightIndexPrefix      = collections.NewPrefix(60)
 	// Index of currently-active maintenance reservations (key = reservationID).
 	// Avoids O(M) full-scan of MaintenanceStates in the MaintenanceActive query.
-	MaintenanceActiveIndexPrefix           = collections.NewPrefix(58)
+	MaintenanceActiveIndexPrefix           = collections.NewPrefix(61)
 	ParamsKey                              = []byte("p_inference")
 )
 
