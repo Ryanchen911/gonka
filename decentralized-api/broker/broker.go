@@ -209,6 +209,8 @@ type NodeState struct {
 	FailureReason   string     `json:"failure_reason"`
 	StatusTimestamp time.Time  `json:"status_timestamp"`
 	AdminState      AdminState `json:"admin_state"`
+	// Self-reported by the node. Informational only — do not use for authorization or capability gating.
+	MlNodeVersion   string     `json:"ml_node_version"`
 
 	// Epoch-specific data, populated from the chain
 	EpochModels  map[string]types.Model      `json:"epoch_models"`
@@ -712,6 +714,7 @@ func convertInferenceNodeToHardwareNode(in *NodeWithState) *types.HardwareNode {
 		Models:   modelNames,
 		Host:     node.Host,
 		Port:     strconv.Itoa(node.PoCPort),
+		Version:  in.State.MlNodeVersion,
 	}
 }
 
@@ -729,6 +732,10 @@ func areHardwareNodesEqual(a, b *types.HardwareNode) bool {
 	}
 
 	if !hardwareEquals(a, b) {
+		return false
+	}
+
+	if a.Version != b.Version {
 		return false
 	}
 
@@ -785,6 +792,7 @@ type pocParams struct {
 	startPoCBlockHash   string
 	modelId             string
 	seqLen              int64
+	pocStrongerRng      bool
 }
 
 const reconciliationInterval = 30 * time.Second
@@ -1163,8 +1171,9 @@ func (b *Broker) enrichWithPocParams(params *pocParams) {
 	if paramsResp.Params.PocParams != nil {
 		params.modelId = paramsResp.Params.PocParams.ModelId
 		params.seqLen = paramsResp.Params.PocParams.SeqLen
+		params.pocStrongerRng = paramsResp.Params.PocParams.PocStrongerRngEnabled
 		logging.Info("Using PoC params", types.PoC,
-			"model_id", params.modelId, "seq_len", params.seqLen)
+			"model_id", params.modelId, "seq_len", params.seqLen, "poc_stronger_rng", params.pocStrongerRng)
 	}
 }
 
@@ -1184,6 +1193,7 @@ func (b *Broker) getCommandForState(nodeState *NodeState, pocGenParams *pocParam
 					TotalNodes:  totalNodes,
 					Model:       pocGenParams.modelId,
 					SeqLen:      pocGenParams.seqLen,
+					PocStrongerRng:    pocGenParams.pocStrongerRng,
 				}
 			}
 			logging.Error("Cannot create StartPoCNodeCommand: missing PoC parameters", types.Nodes, "error", pocGenErr)
@@ -1278,12 +1288,16 @@ func nodeStatusQueryWorker(broker *Broker) {
 					"nodeId", nodeResp.Node.Id,
 					"prevStatus", queryStatusResult.PrevStatus.String(),
 					"currentStatus", queryStatusResult.CurrentStatus.String())
+			}
 
+			if queryStatusResult.PrevStatus != queryStatusResult.CurrentStatus ||
+				nodeResp.State.MlNodeVersion != queryStatusResult.MlNodeVersion {
 				statusUpdates = append(statusUpdates, StatusUpdate{
-					NodeId:     nodeResp.Node.Id,
-					PrevStatus: queryStatusResult.PrevStatus,
-					NewStatus:  queryStatusResult.CurrentStatus,
-					Timestamp:  timestamp,
+					NodeId:        nodeResp.Node.Id,
+					PrevStatus:    queryStatusResult.PrevStatus,
+					NewStatus:     queryStatusResult.CurrentStatus,
+					Timestamp:     timestamp,
+					MlNodeVersion: queryStatusResult.MlNodeVersion,
 				})
 			}
 		}
@@ -1303,6 +1317,7 @@ func nodeStatusQueryWorker(broker *Broker) {
 type statusQueryResult struct {
 	PrevStatus    types.HardwareNodeStatus
 	CurrentStatus types.HardwareNodeStatus
+	MlNodeVersion string
 }
 
 // Pass by value, because this is supposed to be a readonly function
@@ -1316,12 +1331,14 @@ func (b *Broker) queryNodeStatus(node Node, state NodeState) (*statusQueryResult
 	nodeId := node.Id
 	prevStatus := state.CurrentStatus
 	var currentStatus types.HardwareNodeStatus
+	mlNodeVersion := state.MlNodeVersion
 	if err != nil {
 		logging.Error("queryNodeStatus. Failed to query node status. Assuming currentStatus = FAILED", types.Nodes,
 			"nodeId", nodeId, "error", err)
 		currentStatus = types.HardwareNodeStatus_FAILED
 	} else {
 		currentStatus = toStatus(*status)
+		mlNodeVersion = status.Version
 	}
 
 	logging.Info("queryNodeStatus. Queried node status", types.Nodes, "nodeId", nodeId, "currentStatus", currentStatus.String(), "prevStatus", prevStatus.String())
@@ -1371,6 +1388,7 @@ func (b *Broker) queryNodeStatus(node Node, state NodeState) (*statusQueryResult
 	return &statusQueryResult{
 		PrevStatus:    prevStatus,
 		CurrentStatus: currentStatus,
+		MlNodeVersion: mlNodeVersion,
 	}, nil
 }
 
