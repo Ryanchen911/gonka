@@ -7,6 +7,7 @@ import com.productscience.getRawContainers
 import com.productscience.initCluster
 import com.productscience.logSection
 import org.assertj.core.api.Assertions.assertThat
+import org.junit.jupiter.api.Assumptions.assumeTrue
 import org.junit.jupiter.api.Tag
 import org.junit.jupiter.api.Test
 import org.tinylog.kotlin.Logger
@@ -148,8 +149,9 @@ class MaintenanceWindowTests : TestermintTest() {
         val epochData = genesis.getEpochData()
         val currentHeight = epochData.blockHeight
 
-        // Schedule maintenance to start 10 blocks from now, lasting 15 blocks
-        val startHeight = currentHeight + 10
+        // Schedule maintenance with lead time derived from params
+        val leadBlocks = defaultMaintenanceParams.maintenanceMinScheduleLeadBlocks
+        val startHeight = currentHeight + leadBlocks + 5
         val durationBlocks = 15L
         Logger.info("Scheduling maintenance: start=$startHeight, duration=$durationBlocks, currentHeight=$currentHeight")
 
@@ -165,10 +167,8 @@ class MaintenanceWindowTests : TestermintTest() {
         Logger.info("Schedulability check: schedulable=${schedulabilityResponse.schedulable}, reason=${schedulabilityResponse.rejectionReason}")
 
         if (!schedulabilityResponse.schedulable) {
-            Logger.warn("Window not schedulable: ${schedulabilityResponse.rejectionReason}")
-            Logger.warn("Skipping test — scheduling conditions not met (likely PoC/DKG phase overlap or insufficient credit)")
             genesis.markNeedsReboot()
-            return
+            assumeTrue(false, "Window not schedulable: ${schedulabilityResponse.rejectionReason} — likely PoC/DKG phase overlap or insufficient credit")
         }
 
         // Schedule the maintenance window
@@ -285,9 +285,8 @@ class MaintenanceWindowTests : TestermintTest() {
         val overlapDuration = 20L
 
         if (overlapStart <= epochData.blockHeight + 2) {
-            Logger.warn("Cannot test PoC overlap — PoC start too close, skipping")
             genesis.markNeedsReboot()
-            return
+            assumeTrue(false, "Cannot test PoC overlap — PoC start too close to current height")
         }
 
         logSection("Checking schedulability for PoC-overlapping window")
@@ -330,22 +329,22 @@ class MaintenanceWindowTests : TestermintTest() {
         val join1 = cluster.joinPairs[0]
         val join1Address = join1.node.getColdAddress()
 
+        // Schedule a maintenance window far in the future
+        val epochData = genesis.getEpochData()
+        val leadBlocks = defaultMaintenanceParams.maintenanceMinScheduleLeadBlocks
+        val startHeight = epochData.blockHeight + leadBlocks + 45
+        val durationBlocks = 10L
+
         // Check credit before scheduling
         val creditBefore: MaintenanceCreditResponse = genesis.node.execAndParse(
             listOf("query", "inference", "maintenance-credit", join1Address)
         )
         Logger.info("Credit before scheduling: ${creditBefore.creditBlocks}")
 
-        if (creditBefore.creditBlocks < 10) {
-            Logger.warn("Insufficient credit for test, skipping")
+        if (creditBefore.creditBlocks < durationBlocks) {
             genesis.markNeedsReboot()
-            return
+            assumeTrue(false, "Insufficient credit (${creditBefore.creditBlocks}) for test duration ($durationBlocks)")
         }
-
-        // Schedule a maintenance window far in the future
-        val epochData = genesis.getEpochData()
-        val startHeight = epochData.blockHeight + 50
-        val durationBlocks = 10L
 
         // Check schedulability
         val schedulability: MaintenanceSchedulabilityResponse = genesis.node.execAndParse(
@@ -355,9 +354,8 @@ class MaintenanceWindowTests : TestermintTest() {
             )
         )
         if (!schedulability.schedulable) {
-            Logger.warn("Window not schedulable: ${schedulability.rejectionReason}, skipping")
             genesis.markNeedsReboot()
-            return
+            assumeTrue(false, "Window not schedulable: ${schedulability.rejectionReason}")
         }
 
         logSection("Scheduling maintenance window")
