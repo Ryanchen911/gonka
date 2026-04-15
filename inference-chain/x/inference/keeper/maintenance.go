@@ -2,6 +2,7 @@ package keeper
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"cosmossdk.io/collections"
@@ -16,18 +17,24 @@ import (
 func (k Keeper) NextMaintenanceReservationID(ctx context.Context) (uint64, error) {
 	counter, err := k.MaintenanceReservationCounter.Get(ctx)
 	if err != nil {
+		if !errors.Is(err, collections.ErrNotFound) {
+			return 0, fmt.Errorf("failed to get maintenance reservation counter: %w", err)
+		}
 		counter = 0
 	}
 	nextID := counter + 1
 	if err := k.MaintenanceReservationCounter.Set(ctx, nextID); err != nil {
-		return 0, err
+		return 0, fmt.Errorf("failed to set maintenance reservation counter: %w", err)
 	}
 	return nextID, nil
 }
 
 // SetMaintenanceReservation stores a reservation by its ID.
 func (k Keeper) SetMaintenanceReservation(ctx context.Context, r types.MaintenanceReservation) error {
-	return k.MaintenanceReservations.Set(ctx, r.ReservationId, r)
+	if err := k.MaintenanceReservations.Set(ctx, r.ReservationId, r); err != nil {
+		return fmt.Errorf("failed to set maintenance reservation %d: %w", r.ReservationId, err)
+	}
+	return nil
 }
 
 // GetMaintenanceReservation retrieves a reservation by ID.
@@ -75,7 +82,10 @@ func (k Keeper) GetOrCreateMaintenanceState(ctx context.Context, participant sdk
 // SetMaintenanceTransition stores a transition entry for exact block-height lookup in BeginBlock.
 // transitionType: 1 = activate, 2 = complete (maps to MaintenanceTransitionType enum values).
 func (k Keeper) SetMaintenanceTransition(ctx context.Context, blockHeight int64, reservationID uint64, transitionType uint32) error {
-	return k.MaintenanceTransitions.Set(ctx, collections.Join(blockHeight, reservationID), transitionType)
+	if err := k.MaintenanceTransitions.Set(ctx, collections.Join(blockHeight, reservationID), transitionType); err != nil {
+		return fmt.Errorf("failed to set maintenance transition at height %d for reservation %d: %w", blockHeight, reservationID, err)
+	}
+	return nil
 }
 
 // DeleteMaintenanceTransition removes a consumed transition entry.
@@ -110,53 +120,38 @@ func (k Keeper) IterateMaintenanceTransitionsAtHeight(ctx context.Context, block
 	return nil
 }
 
-// --- Start Height Index (for scheduling overlap checks) ---
-
-// SetMaintenanceStartHeightIndex adds an index entry for a reservation by its start height.
-func (k Keeper) SetMaintenanceStartHeightIndex(ctx context.Context, startHeight int64, reservationID uint64) error {
-	return k.MaintenanceStartHeightIndex.Set(ctx, collections.Join(startHeight, reservationID), reservationID)
-}
-
-// DeleteMaintenanceStartHeightIndex removes a start-height index entry.
-func (k Keeper) DeleteMaintenanceStartHeightIndex(ctx context.Context, startHeight int64, reservationID uint64) error {
-	return k.MaintenanceStartHeightIndex.Remove(ctx, collections.Join(startHeight, reservationID))
-}
-
-// IterateMaintenanceStartHeightRange iterates reservations whose start height falls in [fromHeight, toHeight].
-// Used for bounded overlap checks during scheduling.
-func (k Keeper) IterateMaintenanceStartHeightRange(ctx context.Context, fromHeight, toHeight int64, fn func(reservationID uint64) (stop bool, err error)) error {
-	for h := fromHeight; h <= toHeight; h++ {
-		err := k.iterateStartHeightPrefix(ctx, h, fn)
-		if err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func (k Keeper) iterateStartHeightPrefix(ctx context.Context, height int64, fn func(reservationID uint64) (stop bool, err error)) error {
-	rng := collections.NewPrefixedPairRange[int64, uint64](height)
-	iter, err := k.MaintenanceStartHeightIndex.Iterate(ctx, rng)
+// collectActiveAndScheduledReservations returns all reservations that are currently
+// in ACTIVE or SCHEDULED state by iterating MaintenanceStates. The total number
+// of entries is bounded by 2 * total_participants (at most 1 active + 1 scheduled
+// per participant), and in practice much smaller due to governance concurrency caps.
+// This replaces the former MaintenanceStartHeightIndex approach, which suffered
+// from unbounded growth (completed reservations were never pruned) and brittle
+// scan-range math tied to governance parameter stability.
+func (k Keeper) collectActiveAndScheduledReservations(ctx context.Context) ([]types.MaintenanceReservation, error) {
+	iter, err := k.MaintenanceStates.Iterate(ctx, nil)
 	if err != nil {
-		return err
+		return nil, fmt.Errorf("failed to iterate maintenance states: %w", err)
 	}
 	defer iter.Close()
 
+	var reservations []types.MaintenanceReservation
 	for ; iter.Valid(); iter.Next() {
-		kv, err := iter.KeyValue()
+		state, err := iter.Value()
 		if err != nil {
-			return err
+			continue
 		}
-		reservationID := kv.Value
-		stop, err := fn(reservationID)
-		if err != nil {
-			return err
+		if state.ActiveReservationId != 0 {
+			if r, found := k.GetMaintenanceReservation(ctx, state.ActiveReservationId); found {
+				reservations = append(reservations, r)
+			}
 		}
-		if stop {
-			return nil
+		if state.ScheduledReservationId != 0 {
+			if r, found := k.GetMaintenanceReservation(ctx, state.ScheduledReservationId); found {
+				reservations = append(reservations, r)
+			}
 		}
 	}
-	return nil
+	return reservations, nil
 }
 
 // --- Credit accrual ---
@@ -240,7 +235,7 @@ func (k Keeper) filterOutMaintenanceParticipants(ctx context.Context, members []
 		return members
 	}
 
-	activeAddrs := k.collectActiveMaintenanceAddresses(ctx)
+	activeAddrs := k.CollectActiveMaintenanceAddresses(ctx)
 	if len(activeAddrs) == 0 {
 		return members
 	}
@@ -260,10 +255,10 @@ func (k Keeper) filterOutMaintenanceParticipants(ctx context.Context, members []
 	return filtered
 }
 
-// collectActiveMaintenanceAddresses returns the bech32 addresses of every
+// CollectActiveMaintenanceAddresses returns the bech32 addresses of every
 // participant currently in an ACTIVE maintenance window. The result size is
 // bounded by MaintenanceMaxConcurrentValidators.
-func (k Keeper) collectActiveMaintenanceAddresses(ctx context.Context) map[string]struct{} {
+func (k Keeper) CollectActiveMaintenanceAddresses(ctx context.Context) map[string]struct{} {
 	addrs := make(map[string]struct{})
 	iter, err := k.MaintenanceActiveIndex.Iterate(ctx, nil)
 	if err != nil {

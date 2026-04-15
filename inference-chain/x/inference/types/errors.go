@@ -87,4 +87,6 @@ var (
 	ErrMaintenanceNotScheduled               = sdkerrors.Register(ModuleName, 1185, "reservation is not in scheduled state")
 	ErrMaintenanceOverlapsPoCPhase           = sdkerrors.Register(ModuleName, 1186, "maintenance window overlaps PoC commit/exchange phase")
 	ErrMaintenanceOverlapsDKGPhase           = sdkerrors.Register(ModuleName, 1187, "maintenance window overlaps DKG phase")
+	ErrMaintenanceInvalidParticipant         = sdkerrors.Register(ModuleName, 1188, "invalid participant address")
+	ErrMaintenanceZeroDuration               = sdkerrors.Register(ModuleName, 1189, "duration_blocks must be positive")
 )

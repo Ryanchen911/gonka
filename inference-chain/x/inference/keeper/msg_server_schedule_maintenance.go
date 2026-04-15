@@ -32,7 +32,7 @@ func (k msgServer) ScheduleMaintenance(goCtx context.Context, msg *types.MsgSche
 	// Validate participant address
 	participantAddr, err := sdk.AccAddressFromBech32(msg.Participant)
 	if err != nil {
-		return nil, fmt.Errorf("invalid participant address: %w", err)
+		return nil, types.ErrMaintenanceInvalidParticipant
 	}
 
 	// Verify participant exists
@@ -43,7 +43,7 @@ func (k msgServer) ScheduleMaintenance(goCtx context.Context, msg *types.MsgSche
 
 	// Validate duration is positive and within limits
 	if msg.DurationBlocks == 0 {
-		return nil, fmt.Errorf("duration_blocks must be positive")
+		return nil, types.ErrMaintenanceZeroDuration
 	}
 	if msg.DurationBlocks > mp.MaintenanceMaxWindowBlocks {
 		return nil, types.ErrMaintenanceDurationExceeded
@@ -76,7 +76,7 @@ func (k msgServer) ScheduleMaintenance(goCtx context.Context, msg *types.MsgSche
 	}
 
 	// Check same-participant overlap with existing reservations
-	if err := k.checkParticipantOverlap(goCtx, participantAddr, msg.StartHeight, msg.DurationBlocks, mp); err != nil {
+	if err := k.checkParticipantOverlap(goCtx, participantAddr, msg.StartHeight, msg.DurationBlocks); err != nil {
 		return nil, err
 	}
 
@@ -120,11 +120,6 @@ func (k msgServer) ScheduleMaintenance(goCtx context.Context, msg *types.MsgSche
 		return nil, err
 	}
 	if err := k.SetMaintenanceTransition(goCtx, completeHeight, reservationID, completeType); err != nil {
-		return nil, err
-	}
-
-	// Add start-height index for overlap checks
-	if err := k.SetMaintenanceStartHeightIndex(goCtx, msg.StartHeight, reservationID); err != nil {
 		return nil, err
 	}
 

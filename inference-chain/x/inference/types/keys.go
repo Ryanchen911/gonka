@@ -84,7 +84,7 @@ var (
 	MaintenanceReservationCounterPrefix    = collections.NewPrefix(57)
 	MaintenanceStatesPrefix                = collections.NewPrefix(58)
 	MaintenanceTransitionsPrefix           = collections.NewPrefix(59)
-	MaintenanceStartHeightIndexPrefix      = collections.NewPrefix(60)
+	// Prefix 60 was formerly MaintenanceStartHeightIndexPrefix (removed).
 	// Index of currently-active maintenance reservations (key = reservationID).
 	// Avoids O(M) full-scan of MaintenanceStates in the MaintenanceActive query.
 	MaintenanceActiveIndexPrefix           = collections.NewPrefix(61)

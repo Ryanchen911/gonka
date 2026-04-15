@@ -109,7 +109,6 @@ type (
 		MaintenanceReservationCounter collections.Item[uint64]
 		MaintenanceStates            collections.Map[sdk.AccAddress, types.MaintenanceState]
 		MaintenanceTransitions       collections.Map[collections.Pair[int64, uint64], uint32]
-		MaintenanceStartHeightIndex  collections.Map[collections.Pair[int64, uint64], uint64]
 		// MaintenanceActiveIndex is a KeySet of reservation IDs that are
 		// currently in the ACTIVE state. Lets MaintenanceActive query iterate
 		// only the active set instead of scanning every participant's state.
@@ -568,13 +567,6 @@ func NewKeeper(
 			"maintenance_transitions",
 			collections.PairKeyCodec(collections.Int64Key, collections.Uint64Key),
 			collections.Uint32Value,
-		),
-		MaintenanceStartHeightIndex: collections.NewMap(
-			sb,
-			types.MaintenanceStartHeightIndexPrefix,
-			"maintenance_start_height_index",
-			collections.PairKeyCodec(collections.Int64Key, collections.Uint64Key),
-			collections.Uint64Value,
 		),
 		MaintenanceActiveIndex: collections.NewKeySet(
 			sb,

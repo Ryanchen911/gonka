@@ -3,6 +3,7 @@ package keeper
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	cosmossdk_math "cosmossdk.io/math"
 	sdk "github.com/cosmos/cosmos-sdk/types"
@@ -205,39 +206,28 @@ func (k Keeper) checkActivationTimeConcurrency(ctx context.Context, r types.Main
 		return ""
 	}
 
-	// Count currently active/scheduled reservations that overlap with this window
+	// Collect all active/scheduled reservations and check overlap
+	reservations, err := k.collectActiveAndScheduledReservations(ctx)
+	if err != nil {
+		return ""
+	}
+
 	concurrentCount := uint32(0)
 	concurrentPower := cosmossdk_math.ZeroInt()
 
-	scanFrom := r.StartHeight - int64(mp.MaintenanceMaxWindowBlocks)
-	if scanFrom < 0 {
-		scanFrom = 0
-	}
-	scanTo := endHeight
-
-	_ = k.IterateMaintenanceStartHeightRange(ctx, scanFrom, scanTo, func(reservationID uint64) (bool, error) {
-		if reservationID == r.ReservationId {
-			return false, nil // skip self
+	for _, other := range reservations {
+		if other.ReservationId == r.ReservationId {
+			continue // skip self
 		}
-		other, found := k.GetMaintenanceReservation(ctx, reservationID)
-		if !found {
-			return false, nil
-		}
-		if other.Status == types.MaintenanceReservationStatus_MAINTENANCE_RESERVATION_STATUS_COMPLETED ||
-			other.Status == types.MaintenanceReservationStatus_MAINTENANCE_RESERVATION_STATUS_CANCELED {
-			return false, nil
-		}
-
 		otherEnd := other.StartHeight + int64(other.DurationBlocks) - 1
 		if other.StartHeight <= endHeight && otherEnd >= r.StartHeight {
 			concurrentCount++
-			otherAddr, err := sdk.AccAddressFromBech32(other.Participant)
-			if err == nil {
+			otherAddr, addrErr := sdk.AccAddressFromBech32(other.Participant)
+			if addrErr == nil {
 				concurrentPower = concurrentPower.Add(k.getParticipantPower(ctx, otherAddr))
 			}
 		}
-		return false, nil
-	})
+	}
 
 	var warnings []string
 
@@ -266,12 +256,5 @@ func (k Keeper) checkActivationTimeConcurrency(ctx context.Context, r types.Main
 	if len(warnings) == 0 {
 		return ""
 	}
-	result := "activation-time concurrency advisory: "
-	for i, w := range warnings {
-		if i > 0 {
-			result += "; "
-		}
-		result += w
-	}
-	return result
+	return "activation-time concurrency advisory: " + strings.Join(warnings, "; ")
 }

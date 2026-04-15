@@ -382,7 +382,11 @@ func (am AppModule) updateConfirmationWeights(ctx context.Context, event *types.
 	}
 	weightScaleFactor := params.PocParams.GetWeightScaleFactorDec()
 
-	am.evaluateConfirmation(ctx, event, &epochGroupData, currentValidatorWeights, weightScaleFactor)
+	// Pre-build maintenance address set once (O(A) where A = active reservations,
+	// bounded by governance cap) to avoid repeated O(log N) lookups per participant.
+	maintenanceAddrs := am.keeper.CollectActiveMaintenanceAddresses(ctx)
+
+	am.evaluateConfirmation(ctx, event, &epochGroupData, currentValidatorWeights, weightScaleFactor, maintenanceAddrs)
 
 	return nil
 }
@@ -393,6 +397,7 @@ func (am AppModule) evaluateConfirmation(
 	epochGroupData *types.EpochGroupData,
 	currentValidatorWeights map[string]int64,
 	weightScaleFactor mathsdk.LegacyDec,
+	maintenanceAddrs map[string]struct{},
 ) {
 	confirmationParticipants := am.updateConfirmationWeightsV2(ctx, event, currentValidatorWeights, weightScaleFactor)
 
@@ -426,7 +431,7 @@ func (am AppModule) evaluateConfirmation(
 			if pocWeight > 0 && vw.ConfirmationWeight > 0 {
 				// Skip CPoC weight penalty for maintenance-covered participants.
 				// They are expected to be offline and should not lose confirmation weight.
-				if am.keeper.IsParticipantAddressInActiveMaintenance(ctx, vw.MemberAddress) {
+				if _, inMaint := maintenanceAddrs[vw.MemberAddress]; inMaint {
 					am.LogInfo("evaluateConfirmation: Skipping CPoC weight penalty for maintenance-covered participant", types.PoC,
 						"participant", vw.MemberAddress)
 					continue
@@ -447,7 +452,7 @@ func (am AppModule) evaluateConfirmation(
 			"epochIndex", event.EpochIndex)
 	}
 
-	am.checkConfirmationSlashing(ctx, epochGroupData)
+	am.checkConfirmationSlashing(ctx, epochGroupData, maintenanceAddrs)
 }
 
 // updateConfirmationWeightsV2 calculates confirmation weights using off-chain store commits
@@ -588,6 +593,7 @@ func (am AppModule) updateConfirmationWeightsV2(
 func (am AppModule) checkConfirmationSlashing(
 	ctx context.Context,
 	epochGroupData *types.EpochGroupData,
+	maintenanceAddrs map[string]struct{},
 ) error {
 	notPreservedTotalWeight, err := am.GetNotPreservedTotalWeightByParticipant(ctx, epochGroupData.EpochIndex)
 	if err != nil {
@@ -599,7 +605,7 @@ func (am AppModule) checkConfirmationSlashing(
 		// Skip CPoC ratio computation for maintenance-covered participants.
 		// Their ConfirmationPoCRatio is left unchanged so they are not marked
 		// INACTIVE due to maintenance-covered absence from CPoC duties.
-		if am.keeper.IsParticipantAddressInActiveMaintenance(ctx, address) {
+		if _, inMaint := maintenanceAddrs[address]; inMaint {
 			am.LogInfo("checkConfirmationSlashing: Skipping CPoC ratio for maintenance-covered participant", types.PoC,
 				"address", address)
 			continue

@@ -146,38 +146,26 @@ func (k Keeper) MaintenanceConcurrency(ctx context.Context, req *types.QueryMain
 		targetHeight = sdkCtx.BlockHeight()
 	}
 
-	// Scan reservations that could be active at targetHeight.
-	// A reservation [s, s+d-1] covers targetHeight iff s <= targetHeight AND s+d-1 >= targetHeight.
-	// Since d <= max_window_blocks, s >= targetHeight - max_window_blocks + 1.
-	scanFrom := targetHeight - int64(mp.MaintenanceMaxWindowBlocks) + 1
-	if scanFrom < 0 {
-		scanFrom = 0
+	// Iterate the bounded set of ACTIVE + SCHEDULED reservations to find
+	// those covering targetHeight.
+	reservations, err := k.collectActiveAndScheduledReservations(ctx)
+	if err != nil {
+		return nil, status.Error(codes.Internal, "failed to collect maintenance reservations")
 	}
-	scanTo := targetHeight
 
 	concurrentCount := uint32(0)
 	concurrentPower := cosmossdk_math.ZeroInt()
 
-	_ = k.IterateMaintenanceStartHeightRange(ctx, scanFrom, scanTo, func(reservationID uint64) (bool, error) {
-		r, found := k.GetMaintenanceReservation(ctx, reservationID)
-		if !found {
-			return false, nil
-		}
-		if r.Status == types.MaintenanceReservationStatus_MAINTENANCE_RESERVATION_STATUS_COMPLETED ||
-			r.Status == types.MaintenanceReservationStatus_MAINTENANCE_RESERVATION_STATUS_CANCELED {
-			return false, nil
-		}
-
+	for _, r := range reservations {
 		rEnd := r.StartHeight + int64(r.DurationBlocks) - 1
 		if r.StartHeight <= targetHeight && rEnd >= targetHeight {
 			concurrentCount++
-			rAddr, err := sdk.AccAddressFromBech32(r.Participant)
-			if err == nil {
+			rAddr, addrErr := sdk.AccAddressFromBech32(r.Participant)
+			if addrErr == nil {
 				concurrentPower = concurrentPower.Add(k.getParticipantPower(ctx, rAddr))
 			}
 		}
-		return false, nil
-	})
+	}
 
 	// Express power as basis points of total. All integer math; clamp to int64
 	// at the response boundary (bps fits comfortably in int64).
@@ -253,7 +241,7 @@ func (k Keeper) MaintenanceSchedulability(ctx context.Context, req *types.QueryM
 		return reject(err.Error())
 	}
 
-	if err := k.checkParticipantOverlap(ctx, participantAddr, req.StartHeight, req.DurationBlocks, mp); err != nil {
+	if err := k.checkParticipantOverlap(ctx, participantAddr, req.StartHeight, req.DurationBlocks); err != nil {
 		return reject(err.Error())
 	}
 

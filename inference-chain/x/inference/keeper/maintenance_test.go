@@ -25,8 +25,13 @@ func setupMaintenanceTest(t *testing.T) (keeper.Keeper, types.MsgServer, sdk.Con
 
 	// Allow AccountPermission checks to pass
 	mocks.AccountKeeper.EXPECT().HasAccount(gomock.Any(), gomock.Any()).Return(true).AnyTimes()
-	// Concurrency checks now use O(1) staking lookups. Return "validator not found"
-	// (zero power) and zero total power so no concurrency cap is hit by default.
+	// Concurrency checks call getParticipantPower (via GetValidator) and
+	// getTotalConsensusPower (via GetLastTotalPower). By returning
+	// ErrNoValidatorFound every participant resolves to zero power, and
+	// total power is also zero. This means the power-based concurrency cap
+	// (MaintenanceMaxConcurrentPowerBps) is effectively skipped (totalPower
+	// is not positive), so only the count-based cap applies. Tests that need
+	// to exercise the power cap should override these mocks.
 	mocks.StakingKeeper.EXPECT().GetValidator(gomock.Any(), gomock.Any()).
 		Return(stakingtypes.Validator{}, stakingtypes.ErrNoValidatorFound).AnyTimes()
 	mocks.StakingKeeper.EXPECT().GetLastTotalPower(gomock.Any()).
@@ -78,6 +83,7 @@ func grantCredit(t *testing.T, k keeper.Keeper, ctx sdk.Context, address string,
 // --- 7.1: Scheduling Tests ---
 
 func TestScheduleMaintenance_Success(t *testing.T) {
+	t.Parallel()
 	k, ms, ctx := setupMaintenanceTest(t)
 	participant := "gonka1hgt9lxxxwpsnc3yn2nheqqy9a8vlcjwvgzpve2"
 	registerParticipant(t, k, ctx, participant)
@@ -109,113 +115,115 @@ func TestScheduleMaintenance_Success(t *testing.T) {
 	require.Equal(t, resp.ReservationId, state.ScheduledReservationId)
 }
 
-func TestScheduleMaintenance_Disabled(t *testing.T) {
-	k, ms, ctx := setupMaintenanceTest(t)
+func TestScheduleMaintenance_Failures(t *testing.T) {
+	t.Parallel()
+
 	participant := "gonka1hgt9lxxxwpsnc3yn2nheqqy9a8vlcjwvgzpve2"
-	registerParticipant(t, k, ctx, participant)
-	grantCredit(t, k, ctx, participant, 100)
-
-	// Disable maintenance
-	params, _ := k.GetParams(ctx)
-	params.MaintenanceParams.MaintenanceEnabled = false
-	require.NoError(t, k.SetParams(ctx, params))
-
-	_, err := ms.ScheduleMaintenance(ctx, &types.MsgScheduleMaintenance{
-		Creator:      participant,
-		Participant:  participant,
-		StartHeight:  500,
-		DurationBlocks: 50,
-	})
-	require.ErrorIs(t, err, types.ErrMaintenanceDisabled)
-}
-
-func TestScheduleMaintenance_InsufficientCredit(t *testing.T) {
-	k, ms, ctx := setupMaintenanceTest(t)
-	participant := "gonka1hgt9lxxxwpsnc3yn2nheqqy9a8vlcjwvgzpve2"
-	registerParticipant(t, k, ctx, participant)
-	grantCredit(t, k, ctx, participant, 10) // only 10 blocks credit
-
-	_, err := ms.ScheduleMaintenance(ctx, &types.MsgScheduleMaintenance{
-		Creator:      participant,
-		Participant:  participant,
-		StartHeight:  500,
-		DurationBlocks: 50, // needs 50, has 10
-	})
-	require.ErrorIs(t, err, types.ErrMaintenanceInsufficientCredit)
-}
-
-func TestScheduleMaintenance_InsufficientLeadTime(t *testing.T) {
-	k, ms, ctx := setupMaintenanceTest(t)
-	participant := "gonka1hgt9lxxxwpsnc3yn2nheqqy9a8vlcjwvgzpve2"
-	registerParticipant(t, k, ctx, participant)
-	grantCredit(t, k, ctx, participant, 100)
-
-	// Block height is 100, min lead is 50, so start must be > 150
-	_, err := ms.ScheduleMaintenance(ctx, &types.MsgScheduleMaintenance{
-		Creator:      participant,
-		Participant:  participant,
-		StartHeight:  140, // too close
-		DurationBlocks: 50,
-	})
-	require.ErrorIs(t, err, types.ErrMaintenanceInsufficientLeadTime)
-}
-
-func TestScheduleMaintenance_DurationExceeded(t *testing.T) {
-	k, ms, ctx := setupMaintenanceTest(t)
-	participant := "gonka1hgt9lxxxwpsnc3yn2nheqqy9a8vlcjwvgzpve2"
-	registerParticipant(t, k, ctx, participant)
-	grantCredit(t, k, ctx, participant, 400)
-
-	_, err := ms.ScheduleMaintenance(ctx, &types.MsgScheduleMaintenance{
-		Creator:      participant,
-		Participant:  participant,
-		StartHeight:  500,
-		DurationBlocks: 300, // exceeds max 200
-	})
-	require.ErrorIs(t, err, types.ErrMaintenanceDurationExceeded)
-}
-
-func TestScheduleMaintenance_AlreadyScheduled(t *testing.T) {
-	k, ms, ctx := setupMaintenanceTest(t)
-	participant := "gonka1hgt9lxxxwpsnc3yn2nheqqy9a8vlcjwvgzpve2"
-	registerParticipant(t, k, ctx, participant)
-	grantCredit(t, k, ctx, participant, 200)
-
-	// First schedule succeeds
-	_, err := ms.ScheduleMaintenance(ctx, &types.MsgScheduleMaintenance{
-		Creator:      participant,
-		Participant:  participant,
-		StartHeight:  500,
-		DurationBlocks: 50,
-	})
-	require.NoError(t, err)
-
-	// Second schedule fails
-	_, err = ms.ScheduleMaintenance(ctx, &types.MsgScheduleMaintenance{
-		Creator:      participant,
-		Participant:  participant,
-		StartHeight:  700,
-		DurationBlocks: 50,
-	})
-	require.ErrorIs(t, err, types.ErrMaintenanceAlreadyScheduled)
-}
-
-func TestScheduleMaintenance_ParticipantNotFound(t *testing.T) {
-	_, ms, ctx := setupMaintenanceTest(t)
 	unknownAddr := "gonka1rdyphrqxe9l5hkp7uxcruch64sh337jasqsntr"
 
-	_, err := ms.ScheduleMaintenance(ctx, &types.MsgScheduleMaintenance{
-		Creator:      unknownAddr,
-		Participant:  unknownAddr,
-		StartHeight:  500,
-		DurationBlocks: 50,
-	})
-	require.ErrorIs(t, err, types.ErrParticipantNotFound)
+	tests := []struct {
+		name           string
+		setup          func(t *testing.T, k keeper.Keeper, ctx sdk.Context)
+		msg            *types.MsgScheduleMaintenance
+		expectedErr    error
+	}{
+		{
+			name: "disabled",
+			setup: func(t *testing.T, k keeper.Keeper, ctx sdk.Context) {
+				registerParticipant(t, k, ctx, participant)
+				grantCredit(t, k, ctx, participant, 100)
+				params, _ := k.GetParams(ctx)
+				params.MaintenanceParams.MaintenanceEnabled = false
+				require.NoError(t, k.SetParams(ctx, params))
+			},
+			msg: &types.MsgScheduleMaintenance{
+				Creator: participant, Participant: participant,
+				StartHeight: 500, DurationBlocks: 50,
+			},
+			expectedErr: types.ErrMaintenanceDisabled,
+		},
+		{
+			name: "insufficient credit",
+			setup: func(t *testing.T, k keeper.Keeper, ctx sdk.Context) {
+				registerParticipant(t, k, ctx, participant)
+				grantCredit(t, k, ctx, participant, 10)
+			},
+			msg: &types.MsgScheduleMaintenance{
+				Creator: participant, Participant: participant,
+				StartHeight: 500, DurationBlocks: 50,
+			},
+			expectedErr: types.ErrMaintenanceInsufficientCredit,
+		},
+		{
+			name: "insufficient lead time",
+			setup: func(t *testing.T, k keeper.Keeper, ctx sdk.Context) {
+				registerParticipant(t, k, ctx, participant)
+				grantCredit(t, k, ctx, participant, 100)
+			},
+			msg: &types.MsgScheduleMaintenance{
+				Creator: participant, Participant: participant,
+				StartHeight: 140, DurationBlocks: 50, // block=100, lead=50, must > 150
+			},
+			expectedErr: types.ErrMaintenanceInsufficientLeadTime,
+		},
+		{
+			name: "duration exceeded",
+			setup: func(t *testing.T, k keeper.Keeper, ctx sdk.Context) {
+				registerParticipant(t, k, ctx, participant)
+				grantCredit(t, k, ctx, participant, 400)
+			},
+			msg: &types.MsgScheduleMaintenance{
+				Creator: participant, Participant: participant,
+				StartHeight: 500, DurationBlocks: 300, // max 200
+			},
+			expectedErr: types.ErrMaintenanceDurationExceeded,
+		},
+		{
+			name: "already scheduled",
+			setup: func(t *testing.T, k keeper.Keeper, ctx sdk.Context) {
+				registerParticipant(t, k, ctx, participant)
+				grantCredit(t, k, ctx, participant, 200)
+				ms := keeper.NewMsgServerImpl(k)
+				_, err := ms.ScheduleMaintenance(ctx, &types.MsgScheduleMaintenance{
+					Creator: participant, Participant: participant,
+					StartHeight: 500, DurationBlocks: 50,
+				})
+				require.NoError(t, err)
+			},
+			msg: &types.MsgScheduleMaintenance{
+				Creator: participant, Participant: participant,
+				StartHeight: 700, DurationBlocks: 50,
+			},
+			expectedErr: types.ErrMaintenanceAlreadyScheduled,
+		},
+		{
+			name: "participant not found",
+			setup: func(t *testing.T, k keeper.Keeper, ctx sdk.Context) {
+				// no participant registration
+			},
+			msg: &types.MsgScheduleMaintenance{
+				Creator: unknownAddr, Participant: unknownAddr,
+				StartHeight: 500, DurationBlocks: 50,
+			},
+			expectedErr: types.ErrParticipantNotFound,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			k, ms, ctx := setupMaintenanceTest(t)
+			tc.setup(t, k, ctx)
+			_, err := ms.ScheduleMaintenance(ctx, tc.msg)
+			require.ErrorIs(t, err, tc.expectedErr)
+		})
+	}
 }
 
 // --- 7.1: Cancellation Tests ---
 
 func TestCancelMaintenance_Success(t *testing.T) {
+	t.Parallel()
 	k, ms, ctx := setupMaintenanceTest(t)
 	participant := "gonka1hgt9lxxxwpsnc3yn2nheqqy9a8vlcjwvgzpve2"
 	registerParticipant(t, k, ctx, participant)
@@ -251,6 +259,7 @@ func TestCancelMaintenance_Success(t *testing.T) {
 }
 
 func TestCancelMaintenance_NotFound(t *testing.T) {
+	t.Parallel()
 	_, ms, ctx := setupMaintenanceTest(t)
 	participant := "gonka1hgt9lxxxwpsnc3yn2nheqqy9a8vlcjwvgzpve2"
 
@@ -262,6 +271,7 @@ func TestCancelMaintenance_NotFound(t *testing.T) {
 }
 
 func TestCancelMaintenance_NotScheduled(t *testing.T) {
+	t.Parallel()
 	k, ms, ctx := setupMaintenanceTest(t)
 	participant := "gonka1hgt9lxxxwpsnc3yn2nheqqy9a8vlcjwvgzpve2"
 	registerParticipant(t, k, ctx, participant)
@@ -290,6 +300,7 @@ func TestCancelMaintenance_NotScheduled(t *testing.T) {
 }
 
 func TestCancelMaintenance_CreditCapRespected(t *testing.T) {
+	t.Parallel()
 	k, ms, ctx := setupMaintenanceTest(t)
 	participant := "gonka1hgt9lxxxwpsnc3yn2nheqqy9a8vlcjwvgzpve2"
 	registerParticipant(t, k, ctx, participant)
@@ -324,6 +335,7 @@ func TestCancelMaintenance_CreditCapRespected(t *testing.T) {
 // --- 7.1: Credit Accrual Tests ---
 
 func TestCreditAccrual_BasicGrant(t *testing.T) {
+	t.Parallel()
 	k, _, ctx := setupMaintenanceTest(t)
 	participant := "gonka1hgt9lxxxwpsnc3yn2nheqqy9a8vlcjwvgzpve2"
 	registerParticipant(t, k, ctx, participant)
@@ -335,6 +347,7 @@ func TestCreditAccrual_BasicGrant(t *testing.T) {
 }
 
 func TestCreditAccrual_CapEnforced(t *testing.T) {
+	t.Parallel()
 	k, _, ctx := setupMaintenanceTest(t)
 	participant := "gonka1hgt9lxxxwpsnc3yn2nheqqy9a8vlcjwvgzpve2"
 	registerParticipant(t, k, ctx, participant)
@@ -354,6 +367,7 @@ func TestCreditAccrual_CapEnforced(t *testing.T) {
 // --- 7.1: Lifecycle Tests ---
 
 func TestLifecycle_ActivateAndComplete(t *testing.T) {
+	t.Parallel()
 	k, ms, ctx := setupMaintenanceTest(t)
 	participant := "gonka1hgt9lxxxwpsnc3yn2nheqqy9a8vlcjwvgzpve2"
 	registerParticipant(t, k, ctx, participant)
@@ -407,6 +421,7 @@ func TestLifecycle_ActivateAndComplete(t *testing.T) {
 }
 
 func TestLifecycle_NoTransitionsAtWrongHeight(t *testing.T) {
+	t.Parallel()
 	k, ms, ctx := setupMaintenanceTest(t)
 	participant := "gonka1hgt9lxxxwpsnc3yn2nheqqy9a8vlcjwvgzpve2"
 	registerParticipant(t, k, ctx, participant)
@@ -432,6 +447,7 @@ func TestLifecycle_NoTransitionsAtWrongHeight(t *testing.T) {
 // --- 7.1: Scheduling Availability Query ---
 
 func TestSchedulability_Success(t *testing.T) {
+	t.Parallel()
 	k, _, ctx := setupMaintenanceTest(t)
 	participant := "gonka1hgt9lxxxwpsnc3yn2nheqqy9a8vlcjwvgzpve2"
 	registerParticipant(t, k, ctx, participant)
@@ -447,43 +463,59 @@ func TestSchedulability_Success(t *testing.T) {
 	require.Empty(t, resp.RejectionReason)
 }
 
-func TestSchedulability_InsufficientCredit(t *testing.T) {
-	k, _, ctx := setupMaintenanceTest(t)
+func TestSchedulability_Failures(t *testing.T) {
+	t.Parallel()
+
 	participant := "gonka1hgt9lxxxwpsnc3yn2nheqqy9a8vlcjwvgzpve2"
-	registerParticipant(t, k, ctx, participant)
-	grantCredit(t, k, ctx, participant, 10)
 
-	resp, err := k.MaintenanceSchedulability(ctx, &types.QueryMaintenanceSchedulabilityRequest{
-		Participant:  participant,
-		StartHeight:  500,
-		DurationBlocks: 50,
-	})
-	require.NoError(t, err)
-	require.False(t, resp.Schedulable)
-	require.Contains(t, resp.RejectionReason, "insufficient")
-}
+	tests := []struct {
+		name             string
+		setup            func(t *testing.T, k keeper.Keeper, ctx sdk.Context)
+		req              *types.QueryMaintenanceSchedulabilityRequest
+		reasonContains   string
+	}{
+		{
+			name: "insufficient credit",
+			setup: func(t *testing.T, k keeper.Keeper, ctx sdk.Context) {
+				registerParticipant(t, k, ctx, participant)
+				grantCredit(t, k, ctx, participant, 10)
+			},
+			req: &types.QueryMaintenanceSchedulabilityRequest{
+				Participant: participant, StartHeight: 500, DurationBlocks: 50,
+			},
+			reasonContains: "insufficient",
+		},
+		{
+			name: "disabled",
+			setup: func(t *testing.T, k keeper.Keeper, ctx sdk.Context) {
+				params, _ := k.GetParams(ctx)
+				params.MaintenanceParams.MaintenanceEnabled = false
+				require.NoError(t, k.SetParams(ctx, params))
+			},
+			req: &types.QueryMaintenanceSchedulabilityRequest{
+				Participant: participant, StartHeight: 500, DurationBlocks: 50,
+			},
+			reasonContains: "disabled",
+		},
+	}
 
-func TestSchedulability_Disabled(t *testing.T) {
-	k, _, ctx := setupMaintenanceTest(t)
-
-	// Disable maintenance
-	params, _ := k.GetParams(ctx)
-	params.MaintenanceParams.MaintenanceEnabled = false
-	require.NoError(t, k.SetParams(ctx, params))
-
-	resp, err := k.MaintenanceSchedulability(ctx, &types.QueryMaintenanceSchedulabilityRequest{
-		Participant:  "gonka1hgt9lxxxwpsnc3yn2nheqqy9a8vlcjwvgzpve2",
-		StartHeight:  500,
-		DurationBlocks: 50,
-	})
-	require.NoError(t, err)
-	require.False(t, resp.Schedulable)
-	require.Contains(t, resp.RejectionReason, "disabled")
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			k, _, ctx := setupMaintenanceTest(t)
+			tc.setup(t, k, ctx)
+			resp, err := k.MaintenanceSchedulability(ctx, tc.req)
+			require.NoError(t, err)
+			require.False(t, resp.Schedulable)
+			require.Contains(t, resp.RejectionReason, tc.reasonContains)
+		})
+	}
 }
 
 // --- 7.1: Query Tests ---
 
 func TestQueryMaintenanceCredit(t *testing.T) {
+	t.Parallel()
 	k, _, ctx := setupMaintenanceTest(t)
 	participant := "gonka1hgt9lxxxwpsnc3yn2nheqqy9a8vlcjwvgzpve2"
 	registerParticipant(t, k, ctx, participant)
@@ -496,6 +528,7 @@ func TestQueryMaintenanceCredit(t *testing.T) {
 }
 
 func TestQueryMaintenanceCredit_NotFound(t *testing.T) {
+	t.Parallel()
 	k, _, ctx := setupMaintenanceTest(t)
 
 	resp, err := k.MaintenanceCredit(ctx, &types.QueryMaintenanceCreditRequest{
@@ -507,6 +540,7 @@ func TestQueryMaintenanceCredit_NotFound(t *testing.T) {
 }
 
 func TestQueryMaintenanceStatus(t *testing.T) {
+	t.Parallel()
 	k, ms, ctx := setupMaintenanceTest(t)
 	participant := "gonka1hgt9lxxxwpsnc3yn2nheqqy9a8vlcjwvgzpve2"
 	registerParticipant(t, k, ctx, participant)
@@ -533,6 +567,7 @@ func TestQueryMaintenanceStatus(t *testing.T) {
 }
 
 func TestQueryMaintenanceScheduled(t *testing.T) {
+	t.Parallel()
 	k, ms, ctx := setupMaintenanceTest(t)
 	participant := "gonka1hgt9lxxxwpsnc3yn2nheqqy9a8vlcjwvgzpve2"
 	registerParticipant(t, k, ctx, participant)
@@ -555,6 +590,7 @@ func TestQueryMaintenanceScheduled(t *testing.T) {
 }
 
 func TestQueryMaintenanceActive(t *testing.T) {
+	t.Parallel()
 	k, ms, ctx := setupMaintenanceTest(t)
 	participant := "gonka1hgt9lxxxwpsnc3yn2nheqqy9a8vlcjwvgzpve2"
 	registerParticipant(t, k, ctx, participant)
@@ -586,63 +622,56 @@ func TestQueryMaintenanceActive(t *testing.T) {
 // --- 7.2: Duty Exemption Tests ---
 
 func TestIsParticipantInActiveMaintenance(t *testing.T) {
+	t.Parallel()
 	k, ms, ctx := setupMaintenanceTest(t)
 	participant := "gonka1hgt9lxxxwpsnc3yn2nheqqy9a8vlcjwvgzpve2"
 	registerParticipant(t, k, ctx, participant)
 	grantCredit(t, k, ctx, participant, 100)
 	addr, _ := sdk.AccAddressFromBech32(participant)
 
-	// Not in maintenance initially
-	require.False(t, k.IsParticipantInActiveMaintenance(ctx, addr))
+	// Both AccAddress and string variants return false initially
+	t.Run("not in maintenance initially", func(t *testing.T) {
+		require.False(t, k.IsParticipantInActiveMaintenance(ctx, addr))
+		require.False(t, k.IsParticipantAddressInActiveMaintenance(ctx, participant))
+	})
 
-	// Schedule
+	// Schedule — still not active
 	_, err := ms.ScheduleMaintenance(ctx, &types.MsgScheduleMaintenance{
-		Creator:      participant,
-		Participant:  participant,
-		StartHeight:  500,
-		DurationBlocks: 50,
+		Creator: participant, Participant: participant,
+		StartHeight: 500, DurationBlocks: 50,
 	})
 	require.NoError(t, err)
 
-	// Still not in active maintenance (only scheduled)
-	require.False(t, k.IsParticipantInActiveMaintenance(ctx, addr))
+	t.Run("scheduled but not yet active", func(t *testing.T) {
+		require.False(t, k.IsParticipantInActiveMaintenance(ctx, addr))
+		require.False(t, k.IsParticipantAddressInActiveMaintenance(ctx, participant))
+	})
 
 	// Activate at block 500
 	activateCtx := ctx.WithBlockHeight(500)
 	require.NoError(t, k.ProcessMaintenanceTransitions(activateCtx))
-	require.True(t, k.IsParticipantInActiveMaintenance(activateCtx, addr))
 
-	// Window covers [500, 549] (50 blocks); COMPLETE fires at 550.
+	t.Run("active after activation", func(t *testing.T) {
+		require.True(t, k.IsParticipantInActiveMaintenance(activateCtx, addr))
+		require.True(t, k.IsParticipantAddressInActiveMaintenance(activateCtx, participant))
+	})
+
+	t.Run("invalid address returns false", func(t *testing.T) {
+		require.False(t, k.IsParticipantAddressInActiveMaintenance(activateCtx, "invalid-address"))
+	})
+
+	// Window covers [500, 549]; COMPLETE fires at 550
 	completeCtx := ctx.WithBlockHeight(550)
 	require.NoError(t, k.ProcessMaintenanceTransitions(completeCtx))
-	require.False(t, k.IsParticipantInActiveMaintenance(completeCtx, addr))
-}
 
-func TestIsParticipantAddressInActiveMaintenance(t *testing.T) {
-	k, ms, ctx := setupMaintenanceTest(t)
-	participant := "gonka1hgt9lxxxwpsnc3yn2nheqqy9a8vlcjwvgzpve2"
-	registerParticipant(t, k, ctx, participant)
-	grantCredit(t, k, ctx, participant, 100)
-
-	require.False(t, k.IsParticipantAddressInActiveMaintenance(ctx, participant))
-
-	_, err := ms.ScheduleMaintenance(ctx, &types.MsgScheduleMaintenance{
-		Creator:      participant,
-		Participant:  participant,
-		StartHeight:  500,
-		DurationBlocks: 50,
+	t.Run("not active after completion", func(t *testing.T) {
+		require.False(t, k.IsParticipantInActiveMaintenance(completeCtx, addr))
+		require.False(t, k.IsParticipantAddressInActiveMaintenance(completeCtx, participant))
 	})
-	require.NoError(t, err)
-
-	activateCtx := ctx.WithBlockHeight(500)
-	require.NoError(t, k.ProcessMaintenanceTransitions(activateCtx))
-	require.True(t, k.IsParticipantAddressInActiveMaintenance(activateCtx, participant))
-
-	// Invalid address returns false
-	require.False(t, k.IsParticipantAddressInActiveMaintenance(activateCtx, "invalid-address"))
 }
 
 func TestFilterOutMaintenanceParticipants(t *testing.T) {
+	t.Parallel()
 	k, ms, ctx := setupMaintenanceTest(t)
 	participant1 := "gonka1hgt9lxxxwpsnc3yn2nheqqy9a8vlcjwvgzpve2"
 	participant2 := "gonka1rdyphrqxe9l5hkp7uxcruch64sh337jasqsntr"

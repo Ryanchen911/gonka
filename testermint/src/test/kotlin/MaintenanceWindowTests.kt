@@ -29,6 +29,31 @@ class MaintenanceWindowTests : TestermintTest() {
     private val dockerClient: DockerClient by lazy { DockerClientBuilder.getInstance().build() }
 
     /**
+     * Wait until the participant has accumulated at least [minCredit] blocks of
+     * maintenance credit. Retries by waiting for additional epochs up to
+     * [maxRetryEpochs] times. Returns the final credit balance.
+     */
+    private fun awaitMinimumCredit(
+        genesis: LocalInferencePair,
+        participantAddress: String,
+        minCredit: Long,
+        maxRetryEpochs: Int = 4,
+    ): Long {
+        repeat(maxRetryEpochs) {
+            val credit: MaintenanceCreditResponse = genesis.node.execAndParse(
+                listOf("query", "inference", "maintenance-credit", participantAddress)
+            )
+            if (credit.creditBlocks >= minCredit) return credit.creditBlocks
+            Logger.info("Credit ${credit.creditBlocks} < $minCredit, waiting for another epoch...")
+            genesis.waitForNextEpoch()
+        }
+        val final: MaintenanceCreditResponse = genesis.node.execAndParse(
+            listOf("query", "inference", "maintenance-credit", participantAddress)
+        )
+        return final.creditBlocks
+    }
+
+    /**
      * Default maintenance params used by most tests. Individual tests can
      * override fields via `enableMaintenance(..., overrides = { copy(...) })`.
      */
@@ -59,13 +84,19 @@ class MaintenanceWindowTests : TestermintTest() {
     }
 
     /**
+     * Resolve the Docker container for a pair's chain node.
+     * Throws if the container cannot be found.
+     */
+    private fun nodeContainerFor(pair: LocalInferencePair) =
+        getRawContainers(pair.config).getNode(pair.name)
+            ?: error("Node container not found for ${pair.name}")
+
+    /**
      * Stop the chain node container for a given pair.
      * This causes the validator to stop signing blocks (missing signatures).
      */
     private fun stopNodeContainer(pair: LocalInferencePair) {
-        val nodeContainer = getRawContainers(pair.config).getNode(pair.name)
-            ?: error("Node container not found for ${pair.name}")
-        dockerClient.stopContainerCmd(nodeContainer.id).exec()
+        dockerClient.stopContainerCmd(nodeContainerFor(pair).id).exec()
         Logger.info("Stopped node container for ${pair.name}")
     }
 
@@ -73,10 +104,9 @@ class MaintenanceWindowTests : TestermintTest() {
      * Restart a previously stopped chain node container.
      */
     private fun startNodeContainer(pair: LocalInferencePair) {
-        val nodeContainer = getRawContainers(pair.config).getNode(pair.name)
-            ?: error("Node container not found for ${pair.name}")
-        if (nodeContainer.state != "running") {
-            dockerClient.startContainerCmd(nodeContainer.id).exec()
+        val container = nodeContainerFor(pair)
+        if (container.state != "running") {
+            dockerClient.startContainerCmd(container.id).exec()
         }
         Logger.info("Started node container for ${pair.name}")
     }
@@ -123,26 +153,11 @@ class MaintenanceWindowTests : TestermintTest() {
         val join1Address = join1.node.getColdAddress()
         Logger.info("Join1 address: $join1Address")
 
-        // Wait for a few epochs to accumulate credit (50 blocks per epoch)
+        // Wait for enough epochs to accumulate sufficient credit
         genesis.waitForNextEpoch()
         genesis.waitForNextEpoch()
-
-        // Query credit for join1
-        val creditResponse: MaintenanceCreditResponse = genesis.node.execAndParse(
-            listOf("query", "inference", "maintenance-credit", join1Address)
-        )
-        Logger.info("Join1 maintenance credit: ${creditResponse.creditBlocks} blocks")
-
-        // If credit is insufficient, wait for more epochs
-        if (creditResponse.creditBlocks < 15) {
-            Logger.info("Credit too low, waiting for more epochs...")
-            genesis.waitForNextEpoch()
-            genesis.waitForNextEpoch()
-            val retryCredit: MaintenanceCreditResponse = genesis.node.execAndParse(
-                listOf("query", "inference", "maintenance-credit", join1Address)
-            )
-            Logger.info("Join1 maintenance credit after more epochs: ${retryCredit.creditBlocks} blocks")
-        }
+        val creditBlocks = awaitMinimumCredit(genesis, join1Address, minCredit = 15)
+        Logger.info("Join1 maintenance credit: $creditBlocks blocks")
 
         // Step 3: Schedule a maintenance window for join1
         logSection("Step 3: Scheduling maintenance window for join1")
@@ -166,9 +181,9 @@ class MaintenanceWindowTests : TestermintTest() {
         )
         Logger.info("Schedulability check: schedulable=${schedulabilityResponse.schedulable}, reason=${schedulabilityResponse.rejectionReason}")
 
-        if (!schedulabilityResponse.schedulable) {
+        assumeTrue(schedulabilityResponse.schedulable) {
             genesis.markNeedsReboot()
-            assumeTrue(false, "Window not schedulable: ${schedulabilityResponse.rejectionReason} — likely PoC/DKG phase overlap or insufficient credit")
+            "Window not schedulable: ${schedulabilityResponse.rejectionReason} — likely PoC/DKG phase overlap or insufficient credit"
         }
 
         // Schedule the maintenance window
@@ -284,9 +299,9 @@ class MaintenanceWindowTests : TestermintTest() {
         val overlapStart = pocStart - 5
         val overlapDuration = 20L
 
-        if (overlapStart <= epochData.blockHeight + 2) {
+        assumeTrue(overlapStart > epochData.blockHeight + 2) {
             genesis.markNeedsReboot()
-            assumeTrue(false, "Cannot test PoC overlap — PoC start too close to current height")
+            "Cannot test PoC overlap — PoC start too close to current height"
         }
 
         logSection("Checking schedulability for PoC-overlapping window")
@@ -341,9 +356,9 @@ class MaintenanceWindowTests : TestermintTest() {
         )
         Logger.info("Credit before scheduling: ${creditBefore.creditBlocks}")
 
-        if (creditBefore.creditBlocks < durationBlocks) {
+        assumeTrue(creditBefore.creditBlocks >= durationBlocks) {
             genesis.markNeedsReboot()
-            assumeTrue(false, "Insufficient credit (${creditBefore.creditBlocks}) for test duration ($durationBlocks)")
+            "Insufficient credit (${creditBefore.creditBlocks}) for test duration ($durationBlocks)"
         }
 
         // Check schedulability
@@ -353,9 +368,9 @@ class MaintenanceWindowTests : TestermintTest() {
                 join1Address, startHeight.toString(), durationBlocks.toString()
             )
         )
-        if (!schedulability.schedulable) {
+        assumeTrue(schedulability.schedulable) {
             genesis.markNeedsReboot()
-            assumeTrue(false, "Window not schedulable: ${schedulability.rejectionReason}")
+            "Window not schedulable: ${schedulability.rejectionReason}"
         }
 
         logSection("Scheduling maintenance window")

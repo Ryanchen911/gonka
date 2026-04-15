@@ -10,6 +10,12 @@ import (
 	"github.com/productscience/inference/x/inference/types"
 )
 
+// maxFutureEpochsToCheck is the maximum number of future epochs to examine when
+// checking for PoC/DKG phase overlaps. 5 is sufficient because the maximum
+// maintenance window duration (MaintenanceMaxWindowBlocks) is governance-capped
+// well below 5 full epoch lengths.
+const maxFutureEpochsToCheck = 5
+
 // checkEpochPhaseOverlap verifies the proposed maintenance window does not overlap
 // epoch-critical PoC commit/exchange or DKG (SetNewValidators) phases.
 func (k Keeper) checkEpochPhaseOverlap(ctx context.Context, startHeight int64, durationBlocks uint64, mp *types.MaintenanceParams) error {
@@ -36,7 +42,7 @@ func (k Keeper) checkEpochPhaseOverlap(ctx context.Context, startHeight int64, d
 	epochsToCheck := []types.EpochContext{ec}
 
 	// Add next epochs until we're past endHeight
-	for i := 0; i < 5; i++ {
+	for i := 0; i < maxFutureEpochsToCheck; i++ {
 		next := epochsToCheck[len(epochsToCheck)-1].NextEpochContext()
 		if next.StartOfPoC() > endHeight {
 			break
@@ -76,52 +82,34 @@ func (k Keeper) checkEpochPhaseOverlap(ctx context.Context, startHeight int64, d
 // checkConcurrencyLimits verifies that adding a new reservation does not exceed
 // concurrent participant count or power caps at scheduling time.
 //
+// Instead of scanning a start-height index (which suffered from unbounded growth
+// of completed entries), this iterates the bounded set of ACTIVE + SCHEDULED
+// reservations derived from MaintenanceStates. The size is at most
+// 2 * total_participants, and in practice much smaller.
+//
 // All power math is done in math.Int (cosmossdk_math.Int) to avoid int64
 // overflow on either token aggregation or the bps multiplication.
 func (k Keeper) checkConcurrencyLimits(ctx context.Context, startHeight int64, durationBlocks uint64, participant sdk.AccAddress, mp *types.MaintenanceParams) error {
 	endHeight := startHeight + int64(durationBlocks) - 1
 
+	reservations, err := k.collectActiveAndScheduledReservations(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to check concurrency: %w", err)
+	}
+
 	concurrentCount := uint32(0)
 	concurrentPower := cosmossdk_math.ZeroInt()
-
-	// Get this participant's power for the power cap check
 	participantPower := k.getParticipantPower(ctx, participant)
 
-	// Bounded overlap search: scan reservations whose start height falls in the
-	// range that could overlap with our proposed window.
-	// A reservation [s, s+d) overlaps [startHeight, endHeight] iff:
-	//   s <= endHeight AND s+d-1 >= startHeight
-	// Since d <= max_window_blocks, we know s >= startHeight - max_window_blocks
-	scanFrom := startHeight - int64(mp.MaintenanceMaxWindowBlocks)
-	if scanFrom < 0 {
-		scanFrom = 0
-	}
-	scanTo := endHeight
-
-	err := k.IterateMaintenanceStartHeightRange(ctx, scanFrom, scanTo, func(reservationID uint64) (bool, error) {
-		r, found := k.GetMaintenanceReservation(ctx, reservationID)
-		if !found {
-			return false, nil
-		}
-		// Skip completed or canceled reservations
-		if r.Status == types.MaintenanceReservationStatus_MAINTENANCE_RESERVATION_STATUS_COMPLETED ||
-			r.Status == types.MaintenanceReservationStatus_MAINTENANCE_RESERVATION_STATUS_CANCELED {
-			return false, nil
-		}
-
-		// Check actual overlap: reservation [r.StartHeight, r.StartHeight+r.DurationBlocks-1]
+	for _, r := range reservations {
 		rEnd := r.StartHeight + int64(r.DurationBlocks) - 1
 		if r.StartHeight <= endHeight && rEnd >= startHeight {
 			concurrentCount++
-			rAddr, err := sdk.AccAddressFromBech32(r.Participant)
-			if err == nil {
+			rAddr, addrErr := sdk.AccAddressFromBech32(r.Participant)
+			if addrErr == nil {
 				concurrentPower = concurrentPower.Add(k.getParticipantPower(ctx, rAddr))
 			}
 		}
-		return false, nil
-	})
-	if err != nil {
-		return fmt.Errorf("failed to check concurrency: %w", err)
 	}
 
 	// Check count cap (including the new reservation)
@@ -152,43 +140,36 @@ func validatorPower(v stakingtypes.Validator) cosmossdk_math.Int {
 
 // checkParticipantOverlap checks that the proposed window does not overlap
 // with any existing scheduled/active reservation for the same participant.
-func (k Keeper) checkParticipantOverlap(ctx context.Context, participant sdk.AccAddress, startHeight int64, durationBlocks uint64, mp *types.MaintenanceParams) error {
+// Since MaintenanceState tracks at most 1 active + 1 scheduled reservation per
+// participant, this is a simple direct lookup — no index scan needed.
+func (k Keeper) checkParticipantOverlap(ctx context.Context, participant sdk.AccAddress, startHeight int64, durationBlocks uint64) error {
 	endHeight := startHeight + int64(durationBlocks) - 1
 
-	scanFrom := startHeight - int64(mp.MaintenanceMaxWindowBlocks)
-	if scanFrom < 0 {
-		scanFrom = 0
-	}
-	scanTo := endHeight
-
-	var overlapFound bool
-	err := k.IterateMaintenanceStartHeightRange(ctx, scanFrom, scanTo, func(reservationID uint64) (bool, error) {
-		r, found := k.GetMaintenanceReservation(ctx, reservationID)
-		if !found {
-			return false, nil
-		}
-		if r.Status == types.MaintenanceReservationStatus_MAINTENANCE_RESERVATION_STATUS_COMPLETED ||
-			r.Status == types.MaintenanceReservationStatus_MAINTENANCE_RESERVATION_STATUS_CANCELED {
-			return false, nil
-		}
-		if r.Participant != participant.String() {
-			return false, nil
-		}
-
-		rEnd := r.StartHeight + int64(r.DurationBlocks) - 1
-		if r.StartHeight <= endHeight && rEnd >= startHeight {
-			overlapFound = true
-			return true, nil // stop iteration
-		}
-		return false, nil
-	})
-	if err != nil {
-		return fmt.Errorf("failed to check participant overlap: %w", err)
+	state, found := k.GetMaintenanceState(ctx, participant)
+	if !found {
+		return nil
 	}
 
-	if overlapFound {
-		return types.ErrMaintenanceOverlap
+	// Check active reservation overlap
+	if state.ActiveReservationId != 0 {
+		if r, ok := k.GetMaintenanceReservation(ctx, state.ActiveReservationId); ok {
+			rEnd := r.StartHeight + int64(r.DurationBlocks) - 1
+			if r.StartHeight <= endHeight && rEnd >= startHeight {
+				return types.ErrMaintenanceOverlap
+			}
+		}
 	}
+
+	// Check scheduled reservation overlap
+	if state.ScheduledReservationId != 0 {
+		if r, ok := k.GetMaintenanceReservation(ctx, state.ScheduledReservationId); ok {
+			rEnd := r.StartHeight + int64(r.DurationBlocks) - 1
+			if r.StartHeight <= endHeight && rEnd >= startHeight {
+				return types.ErrMaintenanceOverlap
+			}
+		}
+	}
+
 	return nil
 }
 
