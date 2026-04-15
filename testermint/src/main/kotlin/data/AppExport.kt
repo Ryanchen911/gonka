@@ -70,12 +70,14 @@ data class InferenceParams(
     val confirmationPocParams: ConfirmationPoCParams? = null,
     @SerializedName("transfer_agent_access_params")
     val transferAgentAccessParams: TransferAgentAccessParams? = null,
-    @SerializedName("subnet_escrow_params")
-    val subnetEscrowParams: SubnetEscrowParams? = null,
+    @SerializedName("devshard_escrow_params")
+    val devshardEscrowParams: DevshardEscrowParams? = null,
     @SerializedName("fee_params")
     val feeParams: FeeParamsData? = null,
     @SerializedName("maintenance_params")
     val maintenanceParams: MaintenanceParams? = null,
+    @SerializedName("delegation_params")
+    val delegationParams: DelegationParams? = null,
 )
 
 data class FeeParamsData(
@@ -85,6 +87,25 @@ data class FeeParamsData(
     val baseValidationGas: Long = 0,
     @SerializedName("gas_per_poc_count")
     val gasPerPocCount: Long = 0,
+)
+
+data class DelegationParams(
+    @SerializedName("deploy_window")
+    val deployWindow: Long = 1,
+    @SerializedName("refusal_penalty")
+    val refusalPenalty: Decimal = Decimal(0, 0),
+    @SerializedName("no_participation_penalty")
+    val noParticipationPenalty: Decimal = Decimal(0, 0),
+    @SerializedName("delegation_share")
+    val delegationShare: Decimal = Decimal(0, 0),
+    @SerializedName("w_threshold")
+    val wThreshold: Decimal = Decimal(0, 0),
+    @SerializedName("v_min")
+    val vMin: Long = 0,
+    @SerializedName("cap_factor")
+    val capFactor: Decimal = Decimal(0, 0),
+    @SerializedName("initial_model_id")
+    val initialModelId: String = "",
 )
 
 data class TokenomicsParams(
@@ -163,6 +184,8 @@ data class Decimal(
     override fun equals(other: Any?): Boolean {
         return this.toDouble() == (other as? Decimal)?.toDouble()
     }
+
+    override fun hashCode(): Int = toDouble().hashCode()
 
     companion object {
         private fun fromNumber(number: Number): Decimal {
@@ -256,13 +279,13 @@ data class TransferAgentAccessParams(
     val allowedTransferAddresses: List<String> = emptyList(),
 )
 
-data class SubnetApprovedVersion(
+data class DevshardApprovedVersion(
     val name: String,
     val binary: String,
     val sha256: String,
 )
 
-data class SubnetEscrowParams(
+data class DevshardEscrowParams(
     @SerializedName("min_amount")
     val minAmount: Long,
     @SerializedName("max_amount")
@@ -276,7 +299,7 @@ data class SubnetEscrowParams(
     @SerializedName("token_price")
     val tokenPrice: Long,
     @SerializedName("approved_versions")
-    val approvedVersions: List<SubnetApprovedVersion>? = emptyList(),
+    val approvedVersions: List<DevshardApprovedVersion>? = emptyList(),
 )
 
 data class PocParams(
@@ -284,6 +307,8 @@ data class PocParams(
     val validationSampleSize: Int,
     @SerializedName("poc_data_pruning_epoch_threshold")
     val pocDataPruningEpochThreshold: Long,
+    @SerializedName("models")
+    val models: List<PoCModelConfig> = emptyList(),
     @SerializedName("weight_scale_factor")
     val weightScaleFactor: Decimal? = null,
     @SerializedName("model_params")
@@ -302,6 +327,29 @@ data class PocParams(
     val validationSlots: Long = 2,
     @SerializedName("poc_normalization_enabled")
     val pocNormalizationEnabled: Boolean = false,  // Disabled by default in tests
+) {
+    fun primaryModelConfig(): PoCModelConfig? {
+        return models.firstOrNull()
+    }
+
+    val effectiveModelId: String?
+        get() = primaryModelConfig()?.modelId
+
+    val effectiveSeqLen: Long?
+        get() = primaryModelConfig()?.seqLen
+}
+
+data class PoCModelConfig(
+    @SerializedName("model_id")
+    val modelId: String? = null,
+    @SerializedName("seq_len")
+    val seqLen: Long? = null,
+    @SerializedName("stat_test")
+    val statTest: PoCStatTestParams? = null,
+    @SerializedName("weight_scale_factor")
+    val weightScaleFactor: Decimal? = null,
+    @SerializedName("penalty_start_epoch")
+    val penaltyStartEpoch: Long = 0,
 )
 
 data class PoCStatTestParams(

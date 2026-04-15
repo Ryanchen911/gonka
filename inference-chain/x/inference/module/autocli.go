@@ -283,9 +283,9 @@ func (am AppModule) AutoCLIOptions() *autocliv1.ModuleOptions {
 					PositionalArgs: []*autocliv1.PositionalArgDescriptor{{ProtoField: "epoch_index"}},
 				},
 				{
-					RpcMethod:      "SubnetEscrow",
-					Use:            "show-subnet-escrow [id]",
-					Short:          "Query a subnet escrow by ID",
+					RpcMethod:      "DevshardEscrow",
+					Use:            "show-devshard-escrow [id]",
+					Short:          "Query a devshard escrow by ID",
 					PositionalArgs: []*autocliv1.PositionalArgDescriptor{{ProtoField: "id"}},
 				},
 				{
@@ -323,6 +323,12 @@ func (am AppModule) AutoCLIOptions() *autocliv1.ModuleOptions {
 					Use:            "maintenance-schedulability [participant] [start-height] [duration-blocks]",
 					Short:          "Query whether a proposed maintenance window is schedulable",
 					PositionalArgs: []*autocliv1.PositionalArgDescriptor{{ProtoField: "participant"}, {ProtoField: "start_height"}, {ProtoField: "duration_blocks"}},
+				},
+				{
+					RpcMethod:      "PoCDelegation",
+					Use:            "poc-delegation [participant] [model-id]",
+					Short:          "Query PoC delegation state for a participant",
+					PositionalArgs: []*autocliv1.PositionalArgDescriptor{{ProtoField: "participant"}, {ProtoField: "model_id", Optional: true}},
 				},
 				// this line is used by ignite scaffolding # autocli/query
 			},
@@ -440,14 +446,32 @@ func (am AppModule) AutoCLIOptions() *autocliv1.ModuleOptions {
 					PositionalArgs: []*autocliv1.PositionalArgDescriptor{{ProtoField: "amount"}, {ProtoField: "destination_address"}, {ProtoField: "chain_id"}},
 				},
 				{
-					RpcMethod:      "CreateSubnetEscrow",
-					Use:            "create-subnet-escrow [amount]",
-					Short:          "Create a subnet escrow",
-					PositionalArgs: []*autocliv1.PositionalArgDescriptor{{ProtoField: "amount"}},
+					RpcMethod:      "CreateDevshardEscrow",
+					Use:            "create-devshard-escrow [amount] [model-id]",
+					Short:          "Create a devshard escrow",
+					PositionalArgs: []*autocliv1.PositionalArgDescriptor{{ProtoField: "amount"}, {ProtoField: "model_id"}},
 				},
 				{
-					RpcMethod: "SettleSubnetEscrow",
+					RpcMethod: "SettleDevshardEscrow",
 					Skip:      true,
+				},
+				{
+					RpcMethod:      "SetPoCDelegation",
+					Use:            "set-poc-delegation [model-id] [delegate-to]",
+					Short:          "Set PoC delegation for a model",
+					PositionalArgs: []*autocliv1.PositionalArgDescriptor{{ProtoField: "model_id"}, {ProtoField: "delegate_to"}},
+				},
+				{
+					RpcMethod:      "RefusePoCDelegation",
+					Use:            "refuse-poc-delegation [model-id]",
+					Short:          "Refuse PoC delegation for a model",
+					PositionalArgs: []*autocliv1.PositionalArgDescriptor{{ProtoField: "model_id"}},
+				},
+				{
+					RpcMethod:      "DeclarePoCIntent",
+					Use:            "declare-poc-intent [model-id]",
+					Short:          "Declare intent to deploy for a model",
+					PositionalArgs: []*autocliv1.PositionalArgDescriptor{{ProtoField: "model_id"}},
 				},
 				// this line is used by ignite scaffolding # autocli/tx
 			},

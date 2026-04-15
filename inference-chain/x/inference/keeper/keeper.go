@@ -42,9 +42,9 @@ type (
 		PoCBatches     collections.Map[collections.Triple[int64, sdk.AccAddress, string], types.PoCBatch]
 		PoCValidations collections.Map[collections.Triple[int64, sdk.AccAddress, sdk.AccAddress], types.PoCValidation]
 		// PoC v2 collections
-		PoCValidationsV2          collections.Map[collections.Triple[int64, sdk.AccAddress, sdk.AccAddress], types.PoCValidationV2]
-		PoCV2StoreCommits         collections.Map[collections.Pair[int64, sdk.AccAddress], types.PoCV2StoreCommit]
-		MLNodeWeightDistributions collections.Map[collections.Pair[int64, sdk.AccAddress], types.MLNodeWeightDistribution]
+		PoCValidationsV2          collections.Map[collections.Triple[int64, sdk.AccAddress, collections.Pair[string, sdk.AccAddress]], types.PoCValidationV2]
+		PoCV2StoreCommits         collections.Map[collections.Triple[int64, sdk.AccAddress, string], types.PoCV2StoreCommit]
+		MLNodeWeightDistributions collections.Map[collections.Triple[int64, sdk.AccAddress, string], types.MLNodeWeightDistribution]
 		// Dynamic pricing collections
 		ModelCurrentPriceMap                collections.Map[string, uint64]
 		ModelCapacityMap                    collections.Map[string, uint64]
@@ -97,13 +97,12 @@ type (
 		// Punishment grace epochs for upgrade protection
 		PunishmentGraceEpochs collections.Map[uint64, types.GraceEpochParams]
 		ActiveParticipantsSet collections.KeySet[collections.Pair[uint64, sdk.AccAddress]]
-		// Subnet escrow collections
-		// Subnet escrow collections
-		SubnetEscrows           collections.Map[uint64, types.SubnetEscrow]
-		SubnetEscrowCounter     collections.Item[uint64]
-		SubnetEscrowEpochCount  collections.Map[uint64, uint64]
-		SubnetHostEpochStatsMap collections.Map[collections.Pair[uint64, sdk.AccAddress], types.SubnetHostEpochStats]
-		SubnetEscrowsByEpoch    collections.Map[collections.Pair[uint64, uint64], collections.NoValue]
+		// Devshard escrow collections
+		DevshardEscrows           collections.Map[uint64, types.DevshardEscrow]
+		DevshardEscrowCounter     collections.Item[uint64]
+		DevshardEscrowEpochCount  collections.Map[uint64, uint64]
+		DevshardHostEpochStatsMap collections.Map[collections.Pair[uint64, sdk.AccAddress], types.DevshardHostEpochStats]
+		DevshardEscrowsByEpoch    collections.Map[collections.Pair[uint64, uint64], collections.NoValue]
 		// Maintenance window collections
 		MaintenanceReservations      collections.Map[uint64, types.MaintenanceReservation]
 		MaintenanceReservationCounter collections.Item[uint64]
@@ -113,6 +112,12 @@ type (
 		// currently in the ACTIVE state. Lets MaintenanceActive query iterate
 		// only the active set instead of scanning every participant's state.
 		MaintenanceActiveIndex       collections.KeySet[uint64]
+		// PoC delegation collections
+		PoCDelegations              collections.Map[collections.Pair[string, string], types.PoCDelegation]
+		PoCRefusals                 collections.KeySet[collections.Pair[string, string]]
+		PoCDirectIntents            collections.KeySet[collections.Pair[string, string]]
+		DelegationSnapshot          collections.Item[types.DelegationSnapshot]
+		BootstrapDelegationSnapshot collections.Item[types.BootstrapDelegationSnapshot]
 	}
 )
 
@@ -194,21 +199,21 @@ func NewKeeper(
 			sb,
 			types.PoCValidationV2Prefix,
 			"poc_validation_v2",
-			collections.TripleKeyCodec(collections.Int64Key, sdk.AccAddressKey, sdk.AccAddressKey),
+			collections.TripleKeyCodec(collections.Int64Key, sdk.AccAddressKey, collections.PairKeyCodec(collections.StringKey, sdk.AccAddressKey)),
 			codec.CollValue[types.PoCValidationV2](cdc),
 		),
 		PoCV2StoreCommits: collections.NewMap(
 			sb,
 			types.PoCV2StoreCommitPrefix,
 			"poc_v2_store_commit",
-			collections.PairKeyCodec(collections.Int64Key, sdk.AccAddressKey),
+			collections.TripleKeyCodec(collections.Int64Key, sdk.AccAddressKey, collections.StringKey),
 			codec.CollValue[types.PoCV2StoreCommit](cdc),
 		),
 		MLNodeWeightDistributions: collections.NewMap(
 			sb,
 			types.MLNodeWeightDistributionPrefix,
 			"mlnode_weight_distribution",
-			collections.PairKeyCodec(collections.Int64Key, sdk.AccAddressKey),
+			collections.TripleKeyCodec(collections.Int64Key, sdk.AccAddressKey, collections.StringKey),
 			codec.CollValue[types.MLNodeWeightDistribution](cdc),
 		),
 		// dynamic pricing collections
@@ -505,38 +510,38 @@ func NewKeeper(
 			"active_participants_cache",
 			collections.PairKeyCodec(collections.Uint64Key, sdk.AccAddressKey),
 		),
-		// Subnet escrow collections
-		SubnetEscrows: collections.NewMap(
+		// Devshard escrow collections
+		DevshardEscrows: collections.NewMap(
 			sb,
-			types.SubnetEscrowsPrefix,
-			"subnet_escrows",
+			types.DevshardEscrowsPrefix,
+			"devshard_escrows",
 			collections.Uint64Key,
-			codec.CollValue[types.SubnetEscrow](cdc),
+			codec.CollValue[types.DevshardEscrow](cdc),
 		),
-		SubnetEscrowCounter: collections.NewItem(
+		DevshardEscrowCounter: collections.NewItem(
 			sb,
-			types.SubnetEscrowCounterPrefix,
-			"subnet_escrow_counter",
+			types.DevshardEscrowCounterPrefix,
+			"devshard_escrow_counter",
 			collections.Uint64Value,
 		),
-		SubnetEscrowEpochCount: collections.NewMap(
+		DevshardEscrowEpochCount: collections.NewMap(
 			sb,
-			types.SubnetEscrowEpochCountPrefix,
-			"subnet_escrow_epoch_count",
+			types.DevshardEscrowEpochCountPrefix,
+			"devshard_escrow_epoch_count",
 			collections.Uint64Key,
 			collections.Uint64Value,
 		),
-		SubnetHostEpochStatsMap: collections.NewMap(
+		DevshardHostEpochStatsMap: collections.NewMap(
 			sb,
-			types.SubnetHostEpochStatsPrefix,
-			"subnet_host_epoch_stats",
+			types.DevshardHostEpochStatsPrefix,
+			"devshard_host_epoch_stats",
 			collections.PairKeyCodec(collections.Uint64Key, sdk.AccAddressKey),
-			codec.CollValue[types.SubnetHostEpochStats](cdc),
+			codec.CollValue[types.DevshardHostEpochStats](cdc),
 		),
-		SubnetEscrowsByEpoch: collections.NewMap(
+		DevshardEscrowsByEpoch: collections.NewMap(
 			sb,
-			types.SubnetEscrowsByEpochPrefix,
-			"subnet_escrows_by_epoch",
+			types.DevshardEscrowsByEpochPrefix,
+			"devshard_escrows_by_epoch",
 			collections.PairKeyCodec(collections.Uint64Key, collections.Uint64Key),
 			collections.NoValue{},
 		),
@@ -573,6 +578,38 @@ func NewKeeper(
 			types.MaintenanceActiveIndexPrefix,
 			"maintenance_active_index",
 			collections.Uint64Key,
+		),
+		// PoC delegation collections
+		PoCDelegations: collections.NewMap(
+			sb,
+			types.PoCDelegationPrefix,
+			"poc_delegation",
+			collections.PairKeyCodec(collections.StringKey, collections.StringKey),
+			codec.CollValue[types.PoCDelegation](cdc),
+		),
+		PoCRefusals: collections.NewKeySet(
+			sb,
+			types.PoCRefusalPrefix,
+			"poc_refusal",
+			collections.PairKeyCodec(collections.StringKey, collections.StringKey),
+		),
+		PoCDirectIntents: collections.NewKeySet(
+			sb,
+			types.PoCDirectIntentPrefix,
+			"poc_direct_intent",
+			collections.PairKeyCodec(collections.StringKey, collections.StringKey),
+		),
+		DelegationSnapshot: collections.NewItem(
+			sb,
+			types.DelegationSnapshotPrefix,
+			"delegation_snapshot",
+			codec.CollValue[types.DelegationSnapshot](cdc),
+		),
+		BootstrapDelegationSnapshot: collections.NewItem(
+			sb,
+			types.BootstrapDelegationSnapshotPrefix,
+			"bootstrap_delegation_snapshot",
+			codec.CollValue[types.BootstrapDelegationSnapshot](cdc),
 		),
 	}
 	// Build the collections schema

@@ -29,7 +29,7 @@ func WithArtifactStore(store *artifacts.ManagedArtifactStore) ServerOption {
 	}
 }
 
-// WithConfigManager enables serving subnet versions from chain params.
+// WithConfigManager enables serving devshard versions from chain params.
 func WithConfigManager(cm *apiconfig.ConfigManager) ServerOption {
 	return func(s *Server) {
 		s.configManager = cm
@@ -53,10 +53,11 @@ func NewServer(recorder cosmos_client.CosmosMessageClient, broker *broker.Broker
 		opt(s)
 	}
 
-	e.POST("/v2/poc-batches/generated", s.postGeneratedArtifactsV2)
-	e.POST("/v2/poc-batches/validated", s.postValidatedArtifactsV2)
+	// V2 callback routes (per-model).
+	e.POST("/v2/poc-batches/:model_id/generated", s.postGeneratedArtifactsV2)
+	e.POST("/v2/poc-batches/:model_id/validated", s.postValidatedArtifactsV2)
 
-	// Subnet version list from chain params
+	// Devshard version list from chain params
 	e.GET("/versions", s.getVersions)
 
 	return s
@@ -64,9 +65,9 @@ func NewServer(recorder cosmos_client.CosmosMessageClient, broker *broker.Broker
 
 func (s *Server) getVersions(c echo.Context) error {
 	if s.configManager == nil {
-		return c.JSON(http.StatusOK, apiconfig.SubnetVersionsCache{Versions: []apiconfig.SubnetVersion{}})
+		return c.JSON(http.StatusOK, apiconfig.DevshardVersionsCache{Versions: []apiconfig.DevshardVersion{}})
 	}
-	return c.JSON(http.StatusOK, s.configManager.GetSubnetVersions())
+	return c.JSON(http.StatusOK, s.configManager.GetDevshardVersions())
 }
 
 func (s *Server) Start(addr string) {

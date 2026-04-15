@@ -56,9 +56,14 @@ func (msg *MsgGovernanceCancelBridgeOperation) GetSignersStrings() []string {
 	return []string{msg.Authority}
 }
 
-// Subnet escrow messages
-func (msg *MsgCreateSubnetEscrow) GetSignersStrings() []string { return []string{msg.Creator} }
-func (msg *MsgSettleSubnetEscrow) GetSignersStrings() []string { return []string{msg.Settler} }
+// Devshard escrow messages
+func (msg *MsgCreateDevshardEscrow) GetSignersStrings() []string { return []string{msg.Creator} }
+func (msg *MsgSettleDevshardEscrow) GetSignersStrings() []string { return []string{msg.Settler} }
+
+// PoC delegation messages
+func (msg *MsgSetPoCDelegation) GetSignersStrings() []string  { return []string{msg.Sender} }
+func (msg *MsgRefusePoCDelegation) GetSignersStrings() []string { return []string{msg.Sender} }
+func (msg *MsgDeclarePoCIntent) GetSignersStrings() []string   { return []string{msg.Sender} }
 
 // Maintenance messages
 func (msg *MsgScheduleMaintenance) GetSignersStrings() []string { return []string{msg.Creator} }

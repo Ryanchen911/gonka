@@ -91,8 +91,9 @@ const (
 	Query_ListRandomSeeds_FullMethodName                           = "/inference.inference.Query/ListRandomSeeds"
 	Query_ParticipantsWithBalances_FullMethodName                  = "/inference.inference.Query/ParticipantsWithBalances"
 	Query_PoCValidationSnapshot_FullMethodName                     = "/inference.inference.Query/PoCValidationSnapshot"
-	Query_SubnetEscrow_FullMethodName                              = "/inference.inference.Query/SubnetEscrow"
-	Query_SubnetHostEpochStats_FullMethodName                      = "/inference.inference.Query/SubnetHostEpochStats"
+	Query_DevshardEscrow_FullMethodName                            = "/inference.inference.Query/DevshardEscrow"
+	Query_DevshardHostEpochStats_FullMethodName                    = "/inference.inference.Query/DevshardHostEpochStats"
+	Query_PoCDelegation_FullMethodName                             = "/inference.inference.Query/PoCDelegation"
 	Query_MaintenanceCredit_FullMethodName                         = "/inference.inference.Query/MaintenanceCredit"
 	Query_MaintenanceScheduled_FullMethodName                      = "/inference.inference.Query/MaintenanceScheduled"
 	Query_MaintenanceActive_FullMethodName                         = "/inference.inference.Query/MaintenanceActive"
@@ -227,8 +228,9 @@ type QueryClient interface {
 	ParticipantsWithBalances(ctx context.Context, in *QueryParticipantsWithBalancesRequest, opts ...grpc.CallOption) (*QueryParticipantsWithBalancesResponse, error)
 	// Queries PoC validation snapshot for deterministic sampling synchronization.
 	PoCValidationSnapshot(ctx context.Context, in *QueryPoCValidationSnapshotRequest, opts ...grpc.CallOption) (*QueryPoCValidationSnapshotResponse, error)
-	SubnetEscrow(ctx context.Context, in *QueryGetSubnetEscrowRequest, opts ...grpc.CallOption) (*QueryGetSubnetEscrowResponse, error)
-	SubnetHostEpochStats(ctx context.Context, in *QueryGetSubnetHostEpochStatsRequest, opts ...grpc.CallOption) (*QueryGetSubnetHostEpochStatsResponse, error)
+	DevshardEscrow(ctx context.Context, in *QueryGetDevshardEscrowRequest, opts ...grpc.CallOption) (*QueryGetDevshardEscrowResponse, error)
+	DevshardHostEpochStats(ctx context.Context, in *QueryGetDevshardHostEpochStatsRequest, opts ...grpc.CallOption) (*QueryGetDevshardHostEpochStatsResponse, error)
+	PoCDelegation(ctx context.Context, in *QueryPoCDelegationRequest, opts ...grpc.CallOption) (*QueryPoCDelegationResponse, error)
 	// Queries the maintenance credit balance for a participant.
 	MaintenanceCredit(ctx context.Context, in *QueryMaintenanceCreditRequest, opts ...grpc.CallOption) (*QueryMaintenanceCreditResponse, error)
 	// Queries scheduled maintenance windows for a participant.
@@ -899,18 +901,27 @@ func (c *queryClient) PoCValidationSnapshot(ctx context.Context, in *QueryPoCVal
 	return out, nil
 }
 
-func (c *queryClient) SubnetEscrow(ctx context.Context, in *QueryGetSubnetEscrowRequest, opts ...grpc.CallOption) (*QueryGetSubnetEscrowResponse, error) {
-	out := new(QueryGetSubnetEscrowResponse)
-	err := c.cc.Invoke(ctx, Query_SubnetEscrow_FullMethodName, in, out, opts...)
+func (c *queryClient) DevshardEscrow(ctx context.Context, in *QueryGetDevshardEscrowRequest, opts ...grpc.CallOption) (*QueryGetDevshardEscrowResponse, error) {
+	out := new(QueryGetDevshardEscrowResponse)
+	err := c.cc.Invoke(ctx, Query_DevshardEscrow_FullMethodName, in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
 	return out, nil
 }
 
-func (c *queryClient) SubnetHostEpochStats(ctx context.Context, in *QueryGetSubnetHostEpochStatsRequest, opts ...grpc.CallOption) (*QueryGetSubnetHostEpochStatsResponse, error) {
-	out := new(QueryGetSubnetHostEpochStatsResponse)
-	err := c.cc.Invoke(ctx, Query_SubnetHostEpochStats_FullMethodName, in, out, opts...)
+func (c *queryClient) DevshardHostEpochStats(ctx context.Context, in *QueryGetDevshardHostEpochStatsRequest, opts ...grpc.CallOption) (*QueryGetDevshardHostEpochStatsResponse, error) {
+	out := new(QueryGetDevshardHostEpochStatsResponse)
+	err := c.cc.Invoke(ctx, Query_DevshardHostEpochStats_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *queryClient) PoCDelegation(ctx context.Context, in *QueryPoCDelegationRequest, opts ...grpc.CallOption) (*QueryPoCDelegationResponse, error) {
+	out := new(QueryPoCDelegationResponse)
+	err := c.cc.Invoke(ctx, Query_PoCDelegation_FullMethodName, in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -1097,8 +1108,9 @@ type QueryServer interface {
 	ParticipantsWithBalances(context.Context, *QueryParticipantsWithBalancesRequest) (*QueryParticipantsWithBalancesResponse, error)
 	// Queries PoC validation snapshot for deterministic sampling synchronization.
 	PoCValidationSnapshot(context.Context, *QueryPoCValidationSnapshotRequest) (*QueryPoCValidationSnapshotResponse, error)
-	SubnetEscrow(context.Context, *QueryGetSubnetEscrowRequest) (*QueryGetSubnetEscrowResponse, error)
-	SubnetHostEpochStats(context.Context, *QueryGetSubnetHostEpochStatsRequest) (*QueryGetSubnetHostEpochStatsResponse, error)
+	DevshardEscrow(context.Context, *QueryGetDevshardEscrowRequest) (*QueryGetDevshardEscrowResponse, error)
+	DevshardHostEpochStats(context.Context, *QueryGetDevshardHostEpochStatsRequest) (*QueryGetDevshardHostEpochStatsResponse, error)
+	PoCDelegation(context.Context, *QueryPoCDelegationRequest) (*QueryPoCDelegationResponse, error)
 	// Queries the maintenance credit balance for a participant.
 	MaintenanceCredit(context.Context, *QueryMaintenanceCreditRequest) (*QueryMaintenanceCreditResponse, error)
 	// Queries scheduled maintenance windows for a participant.
@@ -1334,11 +1346,14 @@ func (UnimplementedQueryServer) ParticipantsWithBalances(context.Context, *Query
 func (UnimplementedQueryServer) PoCValidationSnapshot(context.Context, *QueryPoCValidationSnapshotRequest) (*QueryPoCValidationSnapshotResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method PoCValidationSnapshot not implemented")
 }
-func (UnimplementedQueryServer) SubnetEscrow(context.Context, *QueryGetSubnetEscrowRequest) (*QueryGetSubnetEscrowResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method SubnetEscrow not implemented")
+func (UnimplementedQueryServer) DevshardEscrow(context.Context, *QueryGetDevshardEscrowRequest) (*QueryGetDevshardEscrowResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method DevshardEscrow not implemented")
 }
-func (UnimplementedQueryServer) SubnetHostEpochStats(context.Context, *QueryGetSubnetHostEpochStatsRequest) (*QueryGetSubnetHostEpochStatsResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method SubnetHostEpochStats not implemented")
+func (UnimplementedQueryServer) DevshardHostEpochStats(context.Context, *QueryGetDevshardHostEpochStatsRequest) (*QueryGetDevshardHostEpochStatsResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method DevshardHostEpochStats not implemented")
+}
+func (UnimplementedQueryServer) PoCDelegation(context.Context, *QueryPoCDelegationRequest) (*QueryPoCDelegationResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method PoCDelegation not implemented")
 }
 func (UnimplementedQueryServer) MaintenanceCredit(context.Context, *QueryMaintenanceCreditRequest) (*QueryMaintenanceCreditResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method MaintenanceCredit not implemented")
@@ -2667,38 +2682,56 @@ func _Query_PoCValidationSnapshot_Handler(srv interface{}, ctx context.Context, 
 	return interceptor(ctx, in, info, handler)
 }
 
-func _Query_SubnetEscrow_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(QueryGetSubnetEscrowRequest)
+func _Query_DevshardEscrow_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(QueryGetDevshardEscrowRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(QueryServer).SubnetEscrow(ctx, in)
+		return srv.(QueryServer).DevshardEscrow(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: Query_SubnetEscrow_FullMethodName,
+		FullMethod: Query_DevshardEscrow_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(QueryServer).SubnetEscrow(ctx, req.(*QueryGetSubnetEscrowRequest))
+		return srv.(QueryServer).DevshardEscrow(ctx, req.(*QueryGetDevshardEscrowRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
 
-func _Query_SubnetHostEpochStats_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(QueryGetSubnetHostEpochStatsRequest)
+func _Query_DevshardHostEpochStats_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(QueryGetDevshardHostEpochStatsRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(QueryServer).SubnetHostEpochStats(ctx, in)
+		return srv.(QueryServer).DevshardHostEpochStats(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: Query_SubnetHostEpochStats_FullMethodName,
+		FullMethod: Query_DevshardHostEpochStats_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(QueryServer).SubnetHostEpochStats(ctx, req.(*QueryGetSubnetHostEpochStatsRequest))
+		return srv.(QueryServer).DevshardHostEpochStats(ctx, req.(*QueryGetDevshardHostEpochStatsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Query_PoCDelegation_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(QueryPoCDelegationRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(QueryServer).PoCDelegation(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Query_PoCDelegation_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(QueryServer).PoCDelegation(ctx, req.(*QueryPoCDelegationRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -3107,12 +3140,16 @@ var Query_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _Query_PoCValidationSnapshot_Handler,
 		},
 		{
-			MethodName: "SubnetEscrow",
-			Handler:    _Query_SubnetEscrow_Handler,
+			MethodName: "DevshardEscrow",
+			Handler:    _Query_DevshardEscrow_Handler,
 		},
 		{
-			MethodName: "SubnetHostEpochStats",
-			Handler:    _Query_SubnetHostEpochStats_Handler,
+			MethodName: "DevshardHostEpochStats",
+			Handler:    _Query_DevshardHostEpochStats_Handler,
+		},
+		{
+			MethodName: "PoCDelegation",
+			Handler:    _Query_PoCDelegation_Handler,
 		},
 		{
 			MethodName: "MaintenanceCredit",
