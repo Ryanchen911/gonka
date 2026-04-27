@@ -27,8 +27,12 @@ message Params {
   DevshardEscrowParams devshard_escrow_params = 14;
   reserved "subnet_escrow_params";
   FeeParams fee_params = 15;
-  MaintenanceParams maintenance_params = 16;
-  DelegationParams delegation_params = 17;
+  // Field numbers 16 and 17 are wire-format-locked to match the upstream
+  // multi-model branch (which shipped delegation_params=16 first). Renumbering
+  // would silently lose DelegationParams from any chain that already stored
+  // params under field 16.
+  DelegationParams delegation_params = 16;
+  MaintenanceParams maintenance_params = 17;
 }
 
 // MaintenanceParams defines the governance-controlled parameters for participant maintenance windows.

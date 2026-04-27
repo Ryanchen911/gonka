@@ -523,10 +523,13 @@ data class MaintenanceParams(
     val maintenanceMinScheduleLeadBlocks: Long = 100,
     @SerializedName("maintenance_max_window_blocks")
     val maintenanceMaxWindowBlocks: Long = 200,
+    // Proto types are uint32 (range 0 .. 4_294_967_295). Kotlin Int is signed
+    // and would overflow at 2_147_483_648. Widen to Long so any governance
+    // value the chain accepts can round-trip without silent truncation.
     @SerializedName("maintenance_max_concurrent_validators")
-    val maintenanceMaxConcurrentValidators: Int = 3,
+    val maintenanceMaxConcurrentValidators: Long = 3,
     @SerializedName("maintenance_max_concurrent_power_bps")
-    val maintenanceMaxConcurrentPowerBps: Int = 1000,
+    val maintenanceMaxConcurrentPowerBps: Long = 1000,
     @SerializedName("maintenance_credit_cap_blocks")
     val maintenanceCreditCapBlocks: Long = 400,
     @SerializedName("maintenance_credit_earn_per_successful_epoch_blocks")

@@ -48,33 +48,31 @@ func (k Keeper) ProcessMaintenanceTransitions(ctx context.Context) error {
 	}
 
 	for _, t := range transitions {
-		var transitionErr error
 		switch types.MaintenanceTransitionType(t.transitionType) {
 		case types.MaintenanceTransitionType_MAINTENANCE_TRANSITION_TYPE_ACTIVATE:
-			transitionErr = k.activateMaintenanceReservation(ctx, sdkCtx, t.reservationID, mp)
-			if transitionErr != nil {
+			if err := k.activateMaintenanceReservation(ctx, sdkCtx, t.reservationID, mp); err != nil {
 				k.LogError("Failed to activate maintenance reservation",
-					types.Maintenance, "reservation_id", t.reservationID, "error", transitionErr)
+					types.Maintenance, "reservation_id", t.reservationID, "error", err)
 			}
 		case types.MaintenanceTransitionType_MAINTENANCE_TRANSITION_TYPE_COMPLETE:
-			transitionErr = k.completeMaintenanceReservation(ctx, sdkCtx, t.reservationID)
-			if transitionErr != nil {
+			if err := k.completeMaintenanceReservation(ctx, sdkCtx, t.reservationID); err != nil {
 				k.LogError("Failed to complete maintenance reservation",
-					types.Maintenance, "reservation_id", t.reservationID, "error", transitionErr)
+					types.Maintenance, "reservation_id", t.reservationID, "error", err)
 			}
 		default:
 			k.LogError("Unknown maintenance transition type",
 				types.Maintenance, "reservation_id", t.reservationID, "type", t.transitionType)
-			// Delete unknown transition types to avoid infinite retry
-			transitionErr = nil
 		}
 
-		// Only delete consumed transition row after successful processing
-		if transitionErr == nil {
-			if err := k.DeleteMaintenanceTransition(ctx, blockHeight, t.reservationID); err != nil {
-				k.LogError("Failed to delete maintenance transition",
-					types.Maintenance, "reservation_id", t.reservationID, "error", err)
-			}
+		// Always delete the transition row, even on error. Transitions are
+		// keyed by exact block height; if we leave a failed row in place, it
+		// will retry on every subsequent block (BeginBlock runs every height
+		// matches), burning CPU and writing logs forever. The failure has
+		// been surfaced in events/logs above; rely on operator monitoring
+		// rather than infinite on-chain retry.
+		if err := k.DeleteMaintenanceTransition(ctx, blockHeight, t.reservationID); err != nil {
+			k.LogError("Failed to delete maintenance transition",
+				types.Maintenance, "reservation_id", t.reservationID, "error", err)
 		}
 	}
 
@@ -108,6 +106,11 @@ func (k Keeper) activateMaintenanceReservation(ctx context.Context, sdkCtx sdk.C
 
 	// Add to the active index for O(A) MaintenanceActive query
 	if err := k.MaintenanceActiveIndex.Set(ctx, reservationID); err != nil {
+		return err
+	}
+
+	// Remove from scheduled index now that the reservation is active.
+	if err := k.MaintenanceScheduledIndex.Remove(ctx, reservationID); err != nil {
 		return err
 	}
 

@@ -10,6 +10,7 @@ import (
 	"go.uber.org/mock/gomock"
 
 	keepertest "github.com/productscience/inference/testutil/keeper"
+	"github.com/productscience/inference/testutil/sample"
 	"github.com/productscience/inference/x/inference/keeper"
 	"github.com/productscience/inference/x/inference/types"
 )
@@ -85,7 +86,7 @@ func grantCredit(t *testing.T, k keeper.Keeper, ctx sdk.Context, address string,
 func TestScheduleMaintenance_Success(t *testing.T) {
 	t.Parallel()
 	k, ms, ctx := setupMaintenanceTest(t)
-	participant := "gonka1hgt9lxxxwpsnc3yn2nheqqy9a8vlcjwvgzpve2"
+	participant := sample.AccAddress()
 	registerParticipant(t, k, ctx, participant)
 	grantCredit(t, k, ctx, participant, 100)
 
@@ -118,8 +119,8 @@ func TestScheduleMaintenance_Success(t *testing.T) {
 func TestScheduleMaintenance_Failures(t *testing.T) {
 	t.Parallel()
 
-	participant := "gonka1hgt9lxxxwpsnc3yn2nheqqy9a8vlcjwvgzpve2"
-	unknownAddr := "gonka1rdyphrqxe9l5hkp7uxcruch64sh337jasqsntr"
+	participant := sample.AccAddress()
+	unknownAddr := sample.AccAddress()
 
 	tests := []struct {
 		name           string
@@ -162,7 +163,7 @@ func TestScheduleMaintenance_Failures(t *testing.T) {
 			},
 			msg: &types.MsgScheduleMaintenance{
 				Creator: participant, Participant: participant,
-				StartHeight: 140, DurationBlocks: 50, // block=100, lead=50, must > 150
+				StartHeight: 140, DurationBlocks: 50, // block=100, lead=50, must be >= 150
 			},
 			expectedErr: types.ErrMaintenanceInsufficientLeadTime,
 		},
@@ -210,6 +211,7 @@ func TestScheduleMaintenance_Failures(t *testing.T) {
 	}
 
 	for _, tc := range tests {
+		tc := tc // capture loop variable for parallel subtests
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			k, ms, ctx := setupMaintenanceTest(t)
@@ -225,7 +227,7 @@ func TestScheduleMaintenance_Failures(t *testing.T) {
 func TestCancelMaintenance_Success(t *testing.T) {
 	t.Parallel()
 	k, ms, ctx := setupMaintenanceTest(t)
-	participant := "gonka1hgt9lxxxwpsnc3yn2nheqqy9a8vlcjwvgzpve2"
+	participant := sample.AccAddress()
 	registerParticipant(t, k, ctx, participant)
 	grantCredit(t, k, ctx, participant, 100)
 
@@ -261,7 +263,7 @@ func TestCancelMaintenance_Success(t *testing.T) {
 func TestCancelMaintenance_NotFound(t *testing.T) {
 	t.Parallel()
 	_, ms, ctx := setupMaintenanceTest(t)
-	participant := "gonka1hgt9lxxxwpsnc3yn2nheqqy9a8vlcjwvgzpve2"
+	participant := sample.AccAddress()
 
 	_, err := ms.CancelMaintenance(ctx, &types.MsgCancelMaintenance{
 		Creator:       participant,
@@ -273,7 +275,7 @@ func TestCancelMaintenance_NotFound(t *testing.T) {
 func TestCancelMaintenance_NotScheduled(t *testing.T) {
 	t.Parallel()
 	k, ms, ctx := setupMaintenanceTest(t)
-	participant := "gonka1hgt9lxxxwpsnc3yn2nheqqy9a8vlcjwvgzpve2"
+	participant := sample.AccAddress()
 	registerParticipant(t, k, ctx, participant)
 	grantCredit(t, k, ctx, participant, 100)
 
@@ -302,7 +304,7 @@ func TestCancelMaintenance_NotScheduled(t *testing.T) {
 func TestCancelMaintenance_CreditCapRespected(t *testing.T) {
 	t.Parallel()
 	k, ms, ctx := setupMaintenanceTest(t)
-	participant := "gonka1hgt9lxxxwpsnc3yn2nheqqy9a8vlcjwvgzpve2"
+	participant := sample.AccAddress()
 	registerParticipant(t, k, ctx, participant)
 	grantCredit(t, k, ctx, participant, 400) // max cap
 
@@ -337,7 +339,7 @@ func TestCancelMaintenance_CreditCapRespected(t *testing.T) {
 func TestCreditAccrual_BasicGrant(t *testing.T) {
 	t.Parallel()
 	k, _, ctx := setupMaintenanceTest(t)
-	participant := "gonka1hgt9lxxxwpsnc3yn2nheqqy9a8vlcjwvgzpve2"
+	participant := sample.AccAddress()
 	registerParticipant(t, k, ctx, participant)
 
 	// Initially no state
@@ -349,7 +351,7 @@ func TestCreditAccrual_BasicGrant(t *testing.T) {
 func TestCreditAccrual_CapEnforced(t *testing.T) {
 	t.Parallel()
 	k, _, ctx := setupMaintenanceTest(t)
-	participant := "gonka1hgt9lxxxwpsnc3yn2nheqqy9a8vlcjwvgzpve2"
+	participant := sample.AccAddress()
 	registerParticipant(t, k, ctx, participant)
 	addr, _ := sdk.AccAddressFromBech32(participant)
 
@@ -369,7 +371,7 @@ func TestCreditAccrual_CapEnforced(t *testing.T) {
 func TestLifecycle_ActivateAndComplete(t *testing.T) {
 	t.Parallel()
 	k, ms, ctx := setupMaintenanceTest(t)
-	participant := "gonka1hgt9lxxxwpsnc3yn2nheqqy9a8vlcjwvgzpve2"
+	participant := sample.AccAddress()
 	registerParticipant(t, k, ctx, participant)
 	grantCredit(t, k, ctx, participant, 100)
 
@@ -423,7 +425,7 @@ func TestLifecycle_ActivateAndComplete(t *testing.T) {
 func TestLifecycle_NoTransitionsAtWrongHeight(t *testing.T) {
 	t.Parallel()
 	k, ms, ctx := setupMaintenanceTest(t)
-	participant := "gonka1hgt9lxxxwpsnc3yn2nheqqy9a8vlcjwvgzpve2"
+	participant := sample.AccAddress()
 	registerParticipant(t, k, ctx, participant)
 	grantCredit(t, k, ctx, participant, 100)
 
@@ -449,7 +451,7 @@ func TestLifecycle_NoTransitionsAtWrongHeight(t *testing.T) {
 func TestSchedulability_Success(t *testing.T) {
 	t.Parallel()
 	k, _, ctx := setupMaintenanceTest(t)
-	participant := "gonka1hgt9lxxxwpsnc3yn2nheqqy9a8vlcjwvgzpve2"
+	participant := sample.AccAddress()
 	registerParticipant(t, k, ctx, participant)
 	grantCredit(t, k, ctx, participant, 100)
 
@@ -466,7 +468,7 @@ func TestSchedulability_Success(t *testing.T) {
 func TestSchedulability_Failures(t *testing.T) {
 	t.Parallel()
 
-	participant := "gonka1hgt9lxxxwpsnc3yn2nheqqy9a8vlcjwvgzpve2"
+	participant := sample.AccAddress()
 
 	tests := []struct {
 		name             string
@@ -500,6 +502,7 @@ func TestSchedulability_Failures(t *testing.T) {
 	}
 
 	for _, tc := range tests {
+		tc := tc // capture loop variable for parallel subtests
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			k, _, ctx := setupMaintenanceTest(t)
@@ -517,7 +520,7 @@ func TestSchedulability_Failures(t *testing.T) {
 func TestQueryMaintenanceCredit(t *testing.T) {
 	t.Parallel()
 	k, _, ctx := setupMaintenanceTest(t)
-	participant := "gonka1hgt9lxxxwpsnc3yn2nheqqy9a8vlcjwvgzpve2"
+	participant := sample.AccAddress()
 	registerParticipant(t, k, ctx, participant)
 	grantCredit(t, k, ctx, participant, 75)
 
@@ -532,7 +535,7 @@ func TestQueryMaintenanceCredit_NotFound(t *testing.T) {
 	k, _, ctx := setupMaintenanceTest(t)
 
 	resp, err := k.MaintenanceCredit(ctx, &types.QueryMaintenanceCreditRequest{
-		Participant: "gonka1hgt9lxxxwpsnc3yn2nheqqy9a8vlcjwvgzpve2",
+		Participant: sample.AccAddress(),
 	})
 	require.NoError(t, err)
 	require.False(t, resp.Found)
@@ -542,7 +545,7 @@ func TestQueryMaintenanceCredit_NotFound(t *testing.T) {
 func TestQueryMaintenanceStatus(t *testing.T) {
 	t.Parallel()
 	k, ms, ctx := setupMaintenanceTest(t)
-	participant := "gonka1hgt9lxxxwpsnc3yn2nheqqy9a8vlcjwvgzpve2"
+	participant := sample.AccAddress()
 	registerParticipant(t, k, ctx, participant)
 	grantCredit(t, k, ctx, participant, 100)
 
@@ -569,7 +572,7 @@ func TestQueryMaintenanceStatus(t *testing.T) {
 func TestQueryMaintenanceScheduled(t *testing.T) {
 	t.Parallel()
 	k, ms, ctx := setupMaintenanceTest(t)
-	participant := "gonka1hgt9lxxxwpsnc3yn2nheqqy9a8vlcjwvgzpve2"
+	participant := sample.AccAddress()
 	registerParticipant(t, k, ctx, participant)
 	grantCredit(t, k, ctx, participant, 100)
 
@@ -592,7 +595,7 @@ func TestQueryMaintenanceScheduled(t *testing.T) {
 func TestQueryMaintenanceActive(t *testing.T) {
 	t.Parallel()
 	k, ms, ctx := setupMaintenanceTest(t)
-	participant := "gonka1hgt9lxxxwpsnc3yn2nheqqy9a8vlcjwvgzpve2"
+	participant := sample.AccAddress()
 	registerParticipant(t, k, ctx, participant)
 	grantCredit(t, k, ctx, participant, 100)
 
@@ -624,7 +627,7 @@ func TestQueryMaintenanceActive(t *testing.T) {
 func TestIsParticipantInActiveMaintenance(t *testing.T) {
 	t.Parallel()
 	k, ms, ctx := setupMaintenanceTest(t)
-	participant := "gonka1hgt9lxxxwpsnc3yn2nheqqy9a8vlcjwvgzpve2"
+	participant := sample.AccAddress()
 	registerParticipant(t, k, ctx, participant)
 	grantCredit(t, k, ctx, participant, 100)
 	addr, _ := sdk.AccAddressFromBech32(participant)
@@ -673,8 +676,8 @@ func TestIsParticipantInActiveMaintenance(t *testing.T) {
 func TestFilterOutMaintenanceParticipants(t *testing.T) {
 	t.Parallel()
 	k, ms, ctx := setupMaintenanceTest(t)
-	participant1 := "gonka1hgt9lxxxwpsnc3yn2nheqqy9a8vlcjwvgzpve2"
-	participant2 := "gonka1rdyphrqxe9l5hkp7uxcruch64sh337jasqsntr"
+	participant1 := sample.AccAddress()
+	participant2 := sample.AccAddress()
 	registerParticipant(t, k, ctx, participant1)
 	registerParticipant(t, k, ctx, participant2)
 	grantCredit(t, k, ctx, participant1, 100)

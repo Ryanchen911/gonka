@@ -61,8 +61,8 @@ class MaintenanceWindowTests : TestermintTest() {
         maintenanceEnabled = true,
         maintenanceMinScheduleLeadBlocks = 5,
         maintenanceMaxWindowBlocks = 50,
-        maintenanceMaxConcurrentValidators = 3,
-        maintenanceMaxConcurrentPowerBps = 5000, // 50%
+        maintenanceMaxConcurrentValidators = 3L,
+        maintenanceMaxConcurrentPowerBps = 5000L, // 50%
         maintenanceCreditCapBlocks = 200,
         maintenanceCreditEarnPerSuccessfulEpochBlocks = 50,
     )

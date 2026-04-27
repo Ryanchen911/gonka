@@ -120,38 +120,76 @@ func (k Keeper) IterateMaintenanceTransitionsAtHeight(ctx context.Context, block
 	return nil
 }
 
-// collectActiveAndScheduledReservations returns all reservations that are currently
-// in ACTIVE or SCHEDULED state by iterating MaintenanceStates. The total number
-// of entries is bounded by 2 * total_participants (at most 1 active + 1 scheduled
-// per participant), and in practice much smaller due to governance concurrency caps.
-// This replaces the former MaintenanceStartHeightIndex approach, which suffered
-// from unbounded growth (completed reservations were never pruned) and brittle
-// scan-range math tied to governance parameter stability.
+// maxMaintenanceIterationLimit is a hard upper bound on the number of entries
+// any maintenance index iteration will process. Defends against DoS via
+// public queries: even if an attacker could somehow bypass the governance
+// concurrency cap and create many scheduled reservations, queries will not
+// burn unbounded CPU/IO. In normal operation this limit is never reached
+// (active is bounded by MaintenanceMaxConcurrentValidators, scheduled is
+// bounded by participant count which is small in practice).
+const maxMaintenanceIterationLimit = 10000
+
+// collectActiveAndScheduledReservations returns all reservations that are
+// currently in ACTIVE or SCHEDULED state by iterating the dedicated indexes
+// (MaintenanceActiveIndex + MaintenanceScheduledIndex). This avoids a full
+// scan of MaintenanceStates and bounds iteration to actual maintenance
+// activity rather than total participant count — important for DoS resistance
+// on the public concurrency / schedulability queries.
 func (k Keeper) collectActiveAndScheduledReservations(ctx context.Context) ([]types.MaintenanceReservation, error) {
-	iter, err := k.MaintenanceStates.Iterate(ctx, nil)
+	var reservations []types.MaintenanceReservation
+
+	if err := k.iterateIndexedReservations(ctx, k.MaintenanceActiveIndex, func(r types.MaintenanceReservation) {
+		reservations = append(reservations, r)
+	}); err != nil {
+		return nil, fmt.Errorf("failed to iterate active maintenance index: %w", err)
+	}
+
+	if err := k.iterateIndexedReservations(ctx, k.MaintenanceScheduledIndex, func(r types.MaintenanceReservation) {
+		reservations = append(reservations, r)
+	}); err != nil {
+		return nil, fmt.Errorf("failed to iterate scheduled maintenance index: %w", err)
+	}
+
+	return reservations, nil
+}
+
+// iterateIndexedReservations walks a reservation-id index, applying fn to each
+// resolved MaintenanceReservation. Skips entries that no longer resolve (e.g.,
+// stale indexes after upgrade). Logs any iter.Value() errors instead of
+// silently swallowing them. Stops after maxMaintenanceIterationLimit entries
+// as a hard DoS safeguard.
+func (k Keeper) iterateIndexedReservations(
+	ctx context.Context,
+	index collections.KeySet[uint64],
+	fn func(types.MaintenanceReservation),
+) error {
+	iter, err := index.Iterate(ctx, nil)
 	if err != nil {
-		return nil, fmt.Errorf("failed to iterate maintenance states: %w", err)
+		return err
 	}
 	defer iter.Close()
 
-	var reservations []types.MaintenanceReservation
+	count := 0
 	for ; iter.Valid(); iter.Next() {
-		state, err := iter.Value()
+		if count >= maxMaintenanceIterationLimit {
+			k.LogWarn("Maintenance index iteration truncated at safety limit",
+				types.Maintenance, "limit", maxMaintenanceIterationLimit)
+			break
+		}
+		count++
+		reservationID, err := iter.Key()
 		if err != nil {
+			k.LogError("Failed to read maintenance index key; skipping entry",
+				types.Maintenance, "error", err)
 			continue
 		}
-		if state.ActiveReservationId != 0 {
-			if r, found := k.GetMaintenanceReservation(ctx, state.ActiveReservationId); found {
-				reservations = append(reservations, r)
-			}
+		r, found := k.GetMaintenanceReservation(ctx, reservationID)
+		if !found {
+			continue
 		}
-		if state.ScheduledReservationId != 0 {
-			if r, found := k.GetMaintenanceReservation(ctx, state.ScheduledReservationId); found {
-				reservations = append(reservations, r)
-			}
-		}
+		fn(r)
 	}
-	return reservations, nil
+	return nil
 }
 
 // --- Credit accrual ---
@@ -159,6 +197,13 @@ func (k Keeper) collectActiveAndScheduledReservations(ctx context.Context) ([]ty
 // GrantMaintenanceCredit grants maintenance credit to a participant after a
 // successful reward claim. Credit is not granted if maintenance was activated
 // for that participant in the claimed epoch.
+//
+// Idempotency: the only caller (msgServer.finishSettle) runs inside a
+// cached context that is committed atomically with the claim. The claim
+// flow's validateRequest rejects when no SettleAmount exists, and
+// finishSettle removes the SettleAmount before invoking this function — so
+// a duplicate call within the same epoch cannot reach here. If the call
+// graph ever expands, add a per-epoch guard (likely a new state field).
 //
 // Lives on Keeper (not msgServer) so other modules and BeginBlock/EndBlock
 // hooks can reuse it. Returns the bech32 decode error to the caller instead
@@ -260,24 +305,10 @@ func (k Keeper) filterOutMaintenanceParticipants(ctx context.Context, members []
 // bounded by MaintenanceMaxConcurrentValidators.
 func (k Keeper) CollectActiveMaintenanceAddresses(ctx context.Context) map[string]struct{} {
 	addrs := make(map[string]struct{})
-	iter, err := k.MaintenanceActiveIndex.Iterate(ctx, nil)
-	if err != nil {
-		return addrs
-	}
-	defer iter.Close()
-	for ; iter.Valid(); iter.Next() {
-		reservationID, err := iter.Key()
-		if err != nil {
-			continue
+	_ = k.iterateIndexedReservations(ctx, k.MaintenanceActiveIndex, func(r types.MaintenanceReservation) {
+		if r.Status == types.MaintenanceReservationStatus_MAINTENANCE_RESERVATION_STATUS_ACTIVE {
+			addrs[r.Participant] = struct{}{}
 		}
-		r, found := k.GetMaintenanceReservation(ctx, reservationID)
-		if !found {
-			continue
-		}
-		if r.Status != types.MaintenanceReservationStatus_MAINTENANCE_RESERVATION_STATUS_ACTIVE {
-			continue
-		}
-		addrs[r.Participant] = struct{}{}
-	}
+	})
 	return addrs
 }

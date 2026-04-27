@@ -66,26 +66,15 @@ func (k Keeper) MaintenanceActive(ctx context.Context, req *types.QueryMaintenan
 
 	// Iterate the active-reservation index instead of the full participant
 	// state map. This is O(A) where A is the number of currently active
-	// reservations (bounded by MaintenanceMaxConcurrentValidators).
-	iter, err := k.MaintenanceActiveIndex.Iterate(ctx, nil)
-	if err != nil {
+	// reservations (bounded by MaintenanceMaxConcurrentValidators) and
+	// further capped by maxMaintenanceIterationLimit as a DoS safeguard.
+	if err := k.iterateIndexedReservations(ctx, k.MaintenanceActiveIndex, func(r types.MaintenanceReservation) {
+		if r.Status == types.MaintenanceReservationStatus_MAINTENANCE_RESERVATION_STATUS_ACTIVE {
+			r := r
+			activeReservations = append(activeReservations, &r)
+		}
+	}); err != nil {
 		return nil, status.Error(codes.Internal, "failed to iterate active maintenance index")
-	}
-	defer iter.Close()
-
-	for ; iter.Valid(); iter.Next() {
-		reservationID, err := iter.Key()
-		if err != nil {
-			continue
-		}
-		r, found := k.GetMaintenanceReservation(ctx, reservationID)
-		if !found {
-			continue
-		}
-		if r.Status != types.MaintenanceReservationStatus_MAINTENANCE_RESERVATION_STATUS_ACTIVE {
-			continue
-		}
-		activeReservations = append(activeReservations, &r)
 	}
 
 	return &types.QueryMaintenanceActiveResponse{
@@ -220,7 +209,9 @@ func (k Keeper) MaintenanceSchedulability(ctx context.Context, req *types.QueryM
 		return reject("duration exceeds maximum maintenance window blocks")
 	}
 
-	if req.StartHeight <= blockHeight+int64(mp.MaintenanceMinScheduleLeadBlocks) {
+	// Mirror the strict less-than check in ScheduleMaintenance: a request scheduled
+	// exactly MinScheduleLeadBlocks blocks ahead is accepted.
+	if req.StartHeight < blockHeight+int64(mp.MaintenanceMinScheduleLeadBlocks) {
 		return reject("start height does not satisfy minimum scheduling lead time")
 	}
 

@@ -112,6 +112,11 @@ type (
 		// currently in the ACTIVE state. Lets MaintenanceActive query iterate
 		// only the active set instead of scanning every participant's state.
 		MaintenanceActiveIndex       collections.KeySet[uint64]
+		// MaintenanceScheduledIndex is a KeySet of reservation IDs that are
+		// currently in the SCHEDULED state. Lets concurrency/schedulability
+		// queries iterate only the bounded set of scheduled reservations
+		// instead of every participant's MaintenanceState (DoS protection).
+		MaintenanceScheduledIndex    collections.KeySet[uint64]
 		// PoC delegation collections
 		PoCDelegations              collections.Map[collections.Pair[string, string], types.PoCDelegation]
 		PoCRefusals                 collections.KeySet[collections.Pair[string, string]]
@@ -577,6 +582,12 @@ func NewKeeper(
 			sb,
 			types.MaintenanceActiveIndexPrefix,
 			"maintenance_active_index",
+			collections.Uint64Key,
+		),
+		MaintenanceScheduledIndex: collections.NewKeySet(
+			sb,
+			types.MaintenanceScheduledIndexPrefix,
+			"maintenance_scheduled_index",
 			collections.Uint64Key,
 		),
 		// PoC delegation collections

@@ -37,6 +37,11 @@ func (k msgServer) CancelMaintenance(goCtx context.Context, msg *types.MsgCancel
 		return nil, err
 	}
 
+	// Remove from scheduled index (no-op if absent).
+	if err := k.MaintenanceScheduledIndex.Remove(goCtx, r.ReservationId); err != nil {
+		return nil, fmt.Errorf("failed to remove scheduled index entry: %w", err)
+	}
+
 	// Restore credit to participant
 	participantAddr, err := sdk.AccAddressFromBech32(r.Participant)
 	if err != nil {

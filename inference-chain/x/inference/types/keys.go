@@ -100,6 +100,10 @@ var (
 	// Index of currently-active maintenance reservations (key = reservationID).
 	// Avoids O(M) full-scan of MaintenanceStates in the MaintenanceActive query.
 	MaintenanceActiveIndexPrefix           = collections.NewPrefix(68)
+	// Index of currently-scheduled maintenance reservations (key = reservationID).
+	// Lets concurrency / schedulability queries iterate only the bounded set
+	// of scheduled reservations instead of every participant's MaintenanceState.
+	MaintenanceScheduledIndexPrefix        = collections.NewPrefix(69)
 	ParamsKey                              = []byte("p_inference")
 )
 

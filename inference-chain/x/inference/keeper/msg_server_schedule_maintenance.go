@@ -49,8 +49,10 @@ func (k msgServer) ScheduleMaintenance(goCtx context.Context, msg *types.MsgSche
 		return nil, types.ErrMaintenanceDurationExceeded
 	}
 
-	// Validate lead time
-	if msg.StartHeight <= blockHeight+int64(mp.MaintenanceMinScheduleLeadBlocks) {
+	// Validate lead time: startHeight must be at least MinScheduleLeadBlocks
+	// in the future. Using strict less-than so a request scheduled exactly
+	// MinScheduleLeadBlocks blocks ahead is accepted.
+	if msg.StartHeight < blockHeight+int64(mp.MaintenanceMinScheduleLeadBlocks) {
 		return nil, types.ErrMaintenanceInsufficientLeadTime
 	}
 
@@ -97,6 +99,11 @@ func (k msgServer) ScheduleMaintenance(goCtx context.Context, msg *types.MsgSche
 
 	if err := k.SetMaintenanceReservation(goCtx, reservation); err != nil {
 		return nil, err
+	}
+
+	// Add to scheduled index for bounded iteration in queries.
+	if err := k.MaintenanceScheduledIndex.Set(goCtx, reservationID); err != nil {
+		return nil, fmt.Errorf("failed to index scheduled reservation: %w", err)
 	}
 
 	// Deduct credit

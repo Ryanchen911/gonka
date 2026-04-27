@@ -84,19 +84,14 @@ func (h StakingHooks) BeforeValidatorSlashed(ctx context.Context, valAddr sdk.Va
 
 	accAddr := sdk.AccAddress(valAddr)
 
-	// Defense in depth: do not slash collateral for maintenance-covered participants
-	// when the slash is downtime-related. The primary enforcement is in x/slashing.
-	// Note: we cannot distinguish downtime vs double-sign slashes here, so this guard
-	// suppresses all staking-driven slashes during maintenance. Double-sign evidence
-	// goes through a separate path and is not affected by this guard.
-	if h.k.IsParticipantInActiveMaintenance(ctx, accAddr) {
-		h.k.Logger().Info("Staking hook: BeforeValidatorSlashed skipped for maintenance-covered participant",
-			"validator_address", valAddr.String(),
-			"participant_address", accAddr.String(),
-			"fraction", fraction.String(),
-		)
-		return nil
-	}
+	// Note: do NOT short-circuit here for maintenance. The SDK's
+	// staking.Slash() call site invokes this hook for ALL slash reasons
+	// (downtime AND double-sign / equivocation). Skipping here would let an
+	// attacker schedule a maintenance window and double-sign without losing
+	// collateral. Downtime exemption is enforced upstream in x/slashing's
+	// liveness accounting (the SDK fork freezes missed-signature counters
+	// during active maintenance), so by the time we reach this hook the
+	// remaining slash is genuinely punitive and must be applied.
 
 	h.k.Logger().Debug("Staking hook: Slashing collateral for validator",
 		"validator_address", valAddr.String(),

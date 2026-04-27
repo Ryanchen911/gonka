@@ -42,8 +42,8 @@ type Params struct {
 	TransferAgentAccessParams *TransferAgentAccessParams `protobuf:"bytes,13,opt,name=transfer_agent_access_params,json=transferAgentAccessParams,proto3" json:"transfer_agent_access_params,omitempty"`
 	DevshardEscrowParams      *DevshardEscrowParams      `protobuf:"bytes,14,opt,name=devshard_escrow_params,json=devshardEscrowParams,proto3" json:"devshard_escrow_params,omitempty"`
 	FeeParams                 *FeeParams                 `protobuf:"bytes,15,opt,name=fee_params,json=feeParams,proto3" json:"fee_params,omitempty"`
-	MaintenanceParams         *MaintenanceParams         `protobuf:"bytes,16,opt,name=maintenance_params,json=maintenanceParams,proto3" json:"maintenance_params,omitempty"`
-	DelegationParams          *DelegationParams          `protobuf:"bytes,17,opt,name=delegation_params,json=delegationParams,proto3" json:"delegation_params,omitempty"`
+	DelegationParams          *DelegationParams          `protobuf:"bytes,16,opt,name=delegation_params,json=delegationParams,proto3" json:"delegation_params,omitempty"`
+	MaintenanceParams         *MaintenanceParams         `protobuf:"bytes,17,opt,name=maintenance_params,json=maintenanceParams,proto3" json:"maintenance_params,omitempty"`
 }
 
 func (m *Params) Reset()         { *m = Params{} }
@@ -3767,9 +3767,9 @@ func (m *Params) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	_ = i
 	var l int
 	_ = l
-	if m.DelegationParams != nil {
+	if m.MaintenanceParams != nil {
 		{
-			size, err := m.DelegationParams.MarshalToSizedBuffer(dAtA[:i])
+			size, err := m.MaintenanceParams.MarshalToSizedBuffer(dAtA[:i])
 			if err != nil {
 				return 0, err
 			}
@@ -3781,9 +3781,9 @@ func (m *Params) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 		i--
 		dAtA[i] = 0x8a
 	}
-	if m.MaintenanceParams != nil {
+	if m.DelegationParams != nil {
 		{
-			size, err := m.MaintenanceParams.MarshalToSizedBuffer(dAtA[:i])
+			size, err := m.DelegationParams.MarshalToSizedBuffer(dAtA[:i])
 			if err != nil {
 				return 0, err
 			}
@@ -7279,42 +7279,6 @@ func (m *Params) Unmarshal(dAtA []byte) error {
 			iNdEx = postIndex
 		case 16:
 			if wireType != 2 {
-				return fmt.Errorf("proto: wrong wireType = %d for field MaintenanceParams", wireType)
-			}
-			var msglen int
-			for shift := uint(0); ; shift += 7 {
-				if shift >= 64 {
-					return ErrIntOverflowParams
-				}
-				if iNdEx >= l {
-					return io.ErrUnexpectedEOF
-				}
-				b := dAtA[iNdEx]
-				iNdEx++
-				msglen |= int(b&0x7F) << shift
-				if b < 0x80 {
-					break
-				}
-			}
-			if msglen < 0 {
-				return ErrInvalidLengthParams
-			}
-			postIndex := iNdEx + msglen
-			if postIndex < 0 {
-				return ErrInvalidLengthParams
-			}
-			if postIndex > l {
-				return io.ErrUnexpectedEOF
-			}
-			if m.MaintenanceParams == nil {
-				m.MaintenanceParams = &MaintenanceParams{}
-			}
-			if err := m.MaintenanceParams.Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
-				return err
-			}
-			iNdEx = postIndex
-		case 17:
-			if wireType != 2 {
 				return fmt.Errorf("proto: wrong wireType = %d for field DelegationParams", wireType)
 			}
 			var msglen int
@@ -7346,6 +7310,42 @@ func (m *Params) Unmarshal(dAtA []byte) error {
 				m.DelegationParams = &DelegationParams{}
 			}
 			if err := m.DelegationParams.Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			iNdEx = postIndex
+		case 17:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field MaintenanceParams", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowParams
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthParams
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthParams
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			if m.MaintenanceParams == nil {
+				m.MaintenanceParams = &MaintenanceParams{}
+			}
+			if err := m.MaintenanceParams.Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
 				return err
 			}
 			iNdEx = postIndex
