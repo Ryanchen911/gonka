@@ -154,10 +154,12 @@ func (k Keeper) collectActiveAndScheduledReservations(ctx context.Context) ([]ty
 }
 
 // iterateIndexedReservations walks a reservation-id index, applying fn to each
-// resolved MaintenanceReservation. Skips entries that no longer resolve (e.g.,
-// stale indexes after upgrade). Logs any iter.Value() errors instead of
-// silently swallowing them. Stops after maxMaintenanceIterationLimit entries
-// as a hard DoS safeguard.
+// resolved MaintenanceReservation. Returns an error if iter.Key() fails — the
+// caller cannot otherwise tell that the result set is incomplete, and silently
+// proceeding would corrupt downstream concurrency / exemption decisions. Stops
+// after maxMaintenanceIterationLimit entries as a hard DoS safeguard. Stale
+// index entries (where the underlying reservation has been deleted) are logged
+// at warn level and skipped — that condition is recoverable and bounded.
 func (k Keeper) iterateIndexedReservations(
 	ctx context.Context,
 	index collections.KeySet[uint64],
@@ -179,12 +181,16 @@ func (k Keeper) iterateIndexedReservations(
 		count++
 		reservationID, err := iter.Key()
 		if err != nil {
-			k.LogError("Failed to read maintenance index key; skipping entry",
-				types.Maintenance, "error", err)
-			continue
+			return fmt.Errorf("failed to read maintenance index key: %w", err)
 		}
 		r, found := k.GetMaintenanceReservation(ctx, reservationID)
 		if !found {
+			// Indicates index drift (an entry pointing at a deleted reservation).
+			// Log so it surfaces in monitoring; continue so a single stale entry
+			// does not break callers like filterOutMaintenanceParticipants or
+			// the concurrency check.
+			k.LogWarn("Maintenance index references missing reservation; skipping entry",
+				types.Maintenance, "reservation_id", reservationID)
 			continue
 		}
 		fn(r)
@@ -221,9 +227,17 @@ func (k Keeper) GrantMaintenanceCredit(ctx context.Context, participant string, 
 
 	state := k.GetOrCreateMaintenanceState(ctx, participantAddr)
 
-	// Do not grant credit if maintenance was activated in this epoch
+	// Do not grant credit if maintenance was activated in this epoch.
+	// Note the `epochIndex != 0` guard: proto-default LastMaintenanceEpoch is
+	// 0 for participants that have never activated maintenance, so without
+	// the guard every fresh participant would have credit suppressed during
+	// epoch 0. The trade-off is that a participant who genuinely activates
+	// maintenance during epoch 0 still earns credit at the epoch-0 settlement.
+	// Epoch 0 is the bootstrap epoch and short-lived, so this edge case is
+	// accepted; a proto-level sentinel field would be required to close it
+	// fully. See proposals/maintenance-windows for context.
 	if state.LastMaintenanceEpoch == epochIndex && epochIndex != 0 {
-		k.LogDebug("Skipping maintenance credit: maintenance was used in this epoch",
+		k.LogDebug("Maintenance credit skipped: used in this epoch",
 			types.Maintenance, "participant", participant, "epoch", epochIndex)
 		return nil
 	}
@@ -303,12 +317,21 @@ func (k Keeper) filterOutMaintenanceParticipants(ctx context.Context, members []
 // CollectActiveMaintenanceAddresses returns the bech32 addresses of every
 // participant currently in an ACTIVE maintenance window. The result size is
 // bounded by MaintenanceMaxConcurrentValidators.
+//
+// The status check is intentionally omitted: MaintenanceActiveIndex is the
+// authority for "active" and is kept in lockstep with the reservation lifecycle
+// (added on activate, removed on complete/cancel). Re-checking r.Status here
+// would mask index/state drift instead of surfacing it. Iterator errors are
+// logged but not returned: callers (filterOutMaintenanceParticipants, CPoC,
+// inference-expiry) want a fail-open default — an empty/partial set widens
+// participation rather than masking maintenance, which is the safer error mode.
 func (k Keeper) CollectActiveMaintenanceAddresses(ctx context.Context) map[string]struct{} {
 	addrs := make(map[string]struct{})
-	_ = k.iterateIndexedReservations(ctx, k.MaintenanceActiveIndex, func(r types.MaintenanceReservation) {
-		if r.Status == types.MaintenanceReservationStatus_MAINTENANCE_RESERVATION_STATUS_ACTIVE {
-			addrs[r.Participant] = struct{}{}
-		}
-	})
+	if err := k.iterateIndexedReservations(ctx, k.MaintenanceActiveIndex, func(r types.MaintenanceReservation) {
+		addrs[r.Participant] = struct{}{}
+	}); err != nil {
+		k.LogError("Failed to iterate active maintenance index; result may be incomplete",
+			types.Maintenance, "error", err)
+	}
 	return addrs
 }

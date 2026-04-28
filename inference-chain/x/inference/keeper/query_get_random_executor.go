@@ -13,7 +13,7 @@ import (
 
 func (k Keeper) GetRandomExecutor(goCtx context.Context, req *types.QueryGetRandomExecutorRequest) (*types.QueryGetRandomExecutorResponse, error) {
 	if req == nil {
-		k.LogError("GetRandomExecutor: received nil request", types.EpochGroup)
+		k.LogError("Received nil request", types.EpochGroup)
 		return nil, status.Error(codes.InvalidArgument, "invalid request")
 	}
 

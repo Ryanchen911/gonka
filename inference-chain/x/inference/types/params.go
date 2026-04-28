@@ -366,6 +366,17 @@ func (p *MaintenanceParams) Validate() error {
 	if p.MaintenanceMaxConcurrentPowerBps > 10000 {
 		return fmt.Errorf("maintenance max concurrent power bps cannot exceed 10000")
 	}
+	// Zero credit-earn silently disables credit accrual: maintenance can be
+	// scheduled exactly once (with whatever credit the participant was seeded
+	// with) and never replenishes. That is a valid governance state but a
+	// confusing one to land on by accident, so reject it here. To intentionally
+	// disable maintenance, set MaintenanceEnabled = false instead.
+	if p.MaintenanceCreditEarnPerSuccessfulEpochBlocks == 0 {
+		return fmt.Errorf("maintenance credit earn per successful epoch blocks must be positive (set maintenance_enabled=false to disable maintenance windows)")
+	}
+	if p.MaintenanceCreditEarnPerSuccessfulEpochBlocks > p.MaintenanceCreditCapBlocks {
+		return fmt.Errorf("maintenance credit earn per successful epoch blocks (%d) must not exceed credit cap (%d)", p.MaintenanceCreditEarnPerSuccessfulEpochBlocks, p.MaintenanceCreditCapBlocks)
+	}
 	return nil
 }
 

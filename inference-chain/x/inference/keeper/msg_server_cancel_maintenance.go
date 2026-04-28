@@ -3,6 +3,7 @@ package keeper
 import (
 	"context"
 	"fmt"
+	"math"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/productscience/inference/x/inference/types"
@@ -26,8 +27,12 @@ func (k msgServer) CancelMaintenance(goCtx context.Context, msg *types.MsgCancel
 		return nil, types.ErrMaintenanceNotScheduled
 	}
 
-	// Verify caller is the participant or the original creator
-	if msg.Creator != r.Participant && msg.Creator != r.CreatedBy {
+	// Authorization: only the participant themselves may cancel their
+	// reservation. ScheduleMaintenance enforces Creator == Participant, so
+	// CreatedBy on existing rows is always equal to Participant — comparing
+	// against r.CreatedBy here is redundant and would silently widen
+	// authorization if the schedule-side constraint were ever relaxed.
+	if msg.Creator != r.Participant {
 		return nil, types.ErrInvalidPermission
 	}
 
@@ -61,7 +66,14 @@ func (k msgServer) CancelMaintenance(goCtx context.Context, msg *types.MsgCancel
 
 	// Remove transition schedule entries. The COMPLETE transition height must
 	// match what ScheduleMaintenance wrote: startHeight + DurationBlocks
-	// (the block AFTER the last covered block).
+	// (the block AFTER the last covered block). Guard against int64 overflow:
+	// DurationBlocks is uint64 and although ScheduleMaintenance enforces a
+	// governance-bounded cap, defense-in-depth here keeps a corrupt or
+	// pre-validation reservation from producing a wrap-around height that
+	// would silently miss the delete and leave a stale transition row behind.
+	if r.DurationBlocks > math.MaxInt64 || r.StartHeight > math.MaxInt64-int64(r.DurationBlocks) {
+		return nil, fmt.Errorf("reservation %d has invalid start/duration that would overflow completion height", r.ReservationId)
+	}
 	completeHeight := r.StartHeight + int64(r.DurationBlocks)
 	if err := k.DeleteMaintenanceTransition(goCtx, r.StartHeight, r.ReservationId); err != nil {
 		return nil, fmt.Errorf("failed to delete activate transition: %w", err)

@@ -5,6 +5,7 @@ import (
 
 	cosmossdk_math "cosmossdk.io/math"
 	sdk "github.com/cosmos/cosmos-sdk/types"
+	"github.com/cosmos/cosmos-sdk/x/group"
 	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
@@ -14,6 +15,20 @@ import (
 	"github.com/productscience/inference/x/inference/keeper"
 	"github.com/productscience/inference/x/inference/types"
 )
+
+// createTestGroupMembers builds mock group members for filterOutMaintenanceParticipants tests.
+func createTestGroupMembers(addresses ...string) []*group.GroupMember {
+	members := make([]*group.GroupMember, len(addresses))
+	for i, addr := range addresses {
+		members[i] = &group.GroupMember{
+			Member: &group.Member{
+				Address: addr,
+				Weight:  "1",
+			},
+		}
+	}
+	return members
+}
 
 // --- Test helpers ---
 
@@ -355,15 +370,20 @@ func TestCreditAccrual_CapEnforced(t *testing.T) {
 	registerParticipant(t, k, ctx, participant)
 	addr, _ := sdk.AccAddressFromBech32(participant)
 
-	// Set credit above cap
-	state := k.GetOrCreateMaintenanceState(ctx, addr)
-	state.CreditBlocks = 500 // above 400 cap
-	require.NoError(t, k.SetMaintenanceState(ctx, state))
+	// Pre-load credit close to (but under) the 400-block cap so a single
+	// successful-epoch grant of 20 blocks would push us past it.
+	grantCredit(t, k, ctx, participant, 390)
 
-	// Verify it persists (cap is only enforced at earn/cancel time)
+	require.NoError(t, k.GrantMaintenanceCredit(ctx, participant, 1))
+
 	state, found := k.GetMaintenanceState(ctx, addr)
 	require.True(t, found)
-	require.Equal(t, uint64(500), state.CreditBlocks)
+	require.Equal(t, uint64(400), state.CreditBlocks, "GrantMaintenanceCredit must clamp at MaintenanceCreditCapBlocks")
+
+	// A second grant must not push above the cap.
+	require.NoError(t, k.GrantMaintenanceCredit(ctx, participant, 2))
+	state, _ = k.GetMaintenanceState(ctx, addr)
+	require.Equal(t, uint64(400), state.CreditBlocks, "subsequent grants must not exceed the cap")
 }
 
 // --- 7.1: Lifecycle Tests ---
@@ -695,7 +715,7 @@ func TestFilterOutMaintenanceParticipants(t *testing.T) {
 	require.NoError(t, k.ProcessMaintenanceTransitions(activateCtx))
 
 	// Create mock group members
-	members := k.CreateTestGroupMembers(participant1, participant2)
+	members := createTestGroupMembers(participant1, participant2)
 
 	// Filter should remove participant1 (in maintenance)
 	filtered := k.FilterOutMaintenanceParticipants(activateCtx, members)

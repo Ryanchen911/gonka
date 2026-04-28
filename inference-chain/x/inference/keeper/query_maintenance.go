@@ -145,15 +145,37 @@ func (k Keeper) MaintenanceConcurrency(ctx context.Context, req *types.QueryMain
 	concurrentCount := uint32(0)
 	concurrentPower := cosmossdk_math.ZeroInt()
 
+	// Per-query power cache: a participant may appear with both a scheduled and
+	// an active reservation that overlap targetHeight, and the bounded-but-
+	// large iteration cap (maxMaintenanceIterationLimit) means an attacker who
+	// stuffs the index could otherwise force up to 10000 staking lookups per
+	// public query. Memoize per bech32 string so each distinct participant
+	// costs exactly one staking lookup, regardless of reservation count.
+	powerCache := make(map[string]cosmossdk_math.Int)
+	seen := make(map[string]struct{})
 	for _, r := range reservations {
 		rEnd := r.StartHeight + int64(r.DurationBlocks) - 1
-		if r.StartHeight <= targetHeight && rEnd >= targetHeight {
-			concurrentCount++
-			rAddr, addrErr := sdk.AccAddressFromBech32(r.Participant)
-			if addrErr == nil {
-				concurrentPower = concurrentPower.Add(k.getParticipantPower(ctx, rAddr))
-			}
+		if r.StartHeight > targetHeight || rEnd < targetHeight {
+			continue
 		}
+		concurrentCount++
+		// Only count each participant's power once even if they appear in
+		// multiple overlapping reservations (e.g., scheduled + active edge).
+		if _, dup := seen[r.Participant]; dup {
+			continue
+		}
+		seen[r.Participant] = struct{}{}
+		power, cached := powerCache[r.Participant]
+		if !cached {
+			rAddr, addrErr := sdk.AccAddressFromBech32(r.Participant)
+			if addrErr != nil {
+				powerCache[r.Participant] = cosmossdk_math.ZeroInt()
+				continue
+			}
+			power = k.getParticipantPower(ctx, rAddr)
+			powerCache[r.Participant] = power
+		}
+		concurrentPower = concurrentPower.Add(power)
 	}
 
 	// Express power as basis points of total. All integer math; clamp to int64

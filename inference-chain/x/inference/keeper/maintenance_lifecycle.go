@@ -3,6 +3,7 @@ package keeper
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strings"
 
 	cosmossdk_math "cosmossdk.io/math"
@@ -94,7 +95,7 @@ func (k Keeper) activateMaintenanceReservation(ctx context.Context, sdkCtx sdk.C
 	warning := k.checkActivationTimeConcurrency(ctx, r, mp)
 	if warning != "" {
 		r.ActivationWarning = warning
-		k.LogWarn("Maintenance reservation activated with concurrency advisory warning",
+		k.LogInfo("Maintenance reservation activated with concurrency advisory warning",
 			types.Maintenance, "reservation_id", reservationID, "warning", warning)
 	}
 
@@ -204,10 +205,6 @@ func (k Keeper) completeMaintenanceReservation(ctx context.Context, sdkCtx sdk.C
 // The reservation still activates regardless — this is advisory only.
 func (k Keeper) checkActivationTimeConcurrency(ctx context.Context, r types.MaintenanceReservation, mp *types.MaintenanceParams) string {
 	endHeight := r.StartHeight + int64(r.DurationBlocks) - 1
-	participantAddr, err := sdk.AccAddressFromBech32(r.Participant)
-	if err != nil {
-		return ""
-	}
 
 	// Collect all active/scheduled reservations and check overlap
 	reservations, err := k.collectActiveAndScheduledReservations(ctx)
@@ -243,6 +240,10 @@ func (k Keeper) checkActivationTimeConcurrency(ctx context.Context, r types.Main
 	// Check power cap (including this participant). All math is integer-only
 	// (math.Int): any string persisted to state must be deterministic across
 	// architectures, and the bps multiplication must not silently overflow.
+	participantAddr, err := sdk.AccAddressFromBech32(r.Participant)
+	if err != nil {
+		return ""
+	}
 	participantPower := k.getParticipantPower(ctx, participantAddr)
 	totalPower := k.getTotalConsensusPower(ctx)
 	if totalPower.IsPositive() && mp.MaintenanceMaxConcurrentPowerBps > 0 {
@@ -259,5 +260,11 @@ func (k Keeper) checkActivationTimeConcurrency(ctx context.Context, r types.Main
 	if len(warnings) == 0 {
 		return ""
 	}
+	// Sort to guarantee deterministic state writes across all validators.
+	// concurrentPower is summed from a non-deterministic iteration order, but
+	// the final sum is order-independent; the warnings slice itself is built
+	// in a fixed order today, but sorting makes the determinism explicit and
+	// future-proof against reordering of the checks above.
+	sort.Strings(warnings)
 	return "activation-time concurrency advisory: " + strings.Join(warnings, "; ")
 }

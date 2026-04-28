@@ -436,7 +436,7 @@ func (am AppModule) evaluateConfirmation(
 				// Skip CPoC weight penalty for maintenance-covered participants.
 				// They are expected to be offline and should not lose confirmation weight.
 				if _, inMaint := maintenanceAddrs[vw.MemberAddress]; inMaint {
-					am.LogInfo("evaluateConfirmation: Skipping CPoC weight penalty for maintenance-covered participant", types.PoC,
+					am.LogDebug("Skipping CPoC weight penalty for maintenance-covered participant", types.PoC,
 						"participant", vw.MemberAddress)
 					continue
 				}
@@ -614,7 +614,7 @@ func (am AppModule) checkConfirmationSlashing(
 		// Their ConfirmationPoCRatio is left unchanged so they are not marked
 		// INACTIVE due to maintenance-covered absence from CPoC duties.
 		if _, inMaint := maintenanceAddrs[address]; inMaint {
-			am.LogInfo("checkConfirmationSlashing: Skipping CPoC ratio for maintenance-covered participant", types.PoC,
+			am.LogDebug("Skipping CPoC ratio for maintenance-covered participant", types.PoC,
 				"address", address)
 			continue
 		}
