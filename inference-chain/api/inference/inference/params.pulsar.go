@@ -32,8 +32,8 @@ var (
 	fd_Params_transfer_agent_access_params protoreflect.FieldDescriptor
 	fd_Params_devshard_escrow_params       protoreflect.FieldDescriptor
 	fd_Params_fee_params                   protoreflect.FieldDescriptor
-	fd_Params_maintenance_params           protoreflect.FieldDescriptor
 	fd_Params_delegation_params            protoreflect.FieldDescriptor
+	fd_Params_maintenance_params           protoreflect.FieldDescriptor
 )
 
 func init() {
@@ -54,8 +54,8 @@ func init() {
 	fd_Params_transfer_agent_access_params = md_Params.Fields().ByName("transfer_agent_access_params")
 	fd_Params_devshard_escrow_params = md_Params.Fields().ByName("devshard_escrow_params")
 	fd_Params_fee_params = md_Params.Fields().ByName("fee_params")
-	fd_Params_maintenance_params = md_Params.Fields().ByName("maintenance_params")
 	fd_Params_delegation_params = md_Params.Fields().ByName("delegation_params")
+	fd_Params_maintenance_params = md_Params.Fields().ByName("maintenance_params")
 }
 
 var _ protoreflect.Message = (*fastReflection_Params)(nil)
@@ -213,15 +213,15 @@ func (x *fastReflection_Params) Range(f func(protoreflect.FieldDescriptor, proto
 			return
 		}
 	}
-	if x.MaintenanceParams != nil {
-		value := protoreflect.ValueOfMessage(x.MaintenanceParams.ProtoReflect())
-		if !f(fd_Params_maintenance_params, value) {
-			return
-		}
-	}
 	if x.DelegationParams != nil {
 		value := protoreflect.ValueOfMessage(x.DelegationParams.ProtoReflect())
 		if !f(fd_Params_delegation_params, value) {
+			return
+		}
+	}
+	if x.MaintenanceParams != nil {
+		value := protoreflect.ValueOfMessage(x.MaintenanceParams.ProtoReflect())
+		if !f(fd_Params_maintenance_params, value) {
 			return
 		}
 	}
@@ -270,10 +270,10 @@ func (x *fastReflection_Params) Has(fd protoreflect.FieldDescriptor) bool {
 		return x.DevshardEscrowParams != nil
 	case "inference.inference.Params.fee_params":
 		return x.FeeParams != nil
-	case "inference.inference.Params.maintenance_params":
-		return x.MaintenanceParams != nil
 	case "inference.inference.Params.delegation_params":
 		return x.DelegationParams != nil
+	case "inference.inference.Params.maintenance_params":
+		return x.MaintenanceParams != nil
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: inference.inference.Params"))
@@ -320,10 +320,10 @@ func (x *fastReflection_Params) Clear(fd protoreflect.FieldDescriptor) {
 		x.DevshardEscrowParams = nil
 	case "inference.inference.Params.fee_params":
 		x.FeeParams = nil
-	case "inference.inference.Params.maintenance_params":
-		x.MaintenanceParams = nil
 	case "inference.inference.Params.delegation_params":
 		x.DelegationParams = nil
+	case "inference.inference.Params.maintenance_params":
+		x.MaintenanceParams = nil
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: inference.inference.Params"))
@@ -385,11 +385,11 @@ func (x *fastReflection_Params) Get(descriptor protoreflect.FieldDescriptor) pro
 	case "inference.inference.Params.fee_params":
 		value := x.FeeParams
 		return protoreflect.ValueOfMessage(value.ProtoReflect())
-	case "inference.inference.Params.maintenance_params":
-		value := x.MaintenanceParams
-		return protoreflect.ValueOfMessage(value.ProtoReflect())
 	case "inference.inference.Params.delegation_params":
 		value := x.DelegationParams
+		return protoreflect.ValueOfMessage(value.ProtoReflect())
+	case "inference.inference.Params.maintenance_params":
+		value := x.MaintenanceParams
 		return protoreflect.ValueOfMessage(value.ProtoReflect())
 	default:
 		if descriptor.IsExtension() {
@@ -441,10 +441,10 @@ func (x *fastReflection_Params) Set(fd protoreflect.FieldDescriptor, value proto
 		x.DevshardEscrowParams = value.Message().Interface().(*DevshardEscrowParams)
 	case "inference.inference.Params.fee_params":
 		x.FeeParams = value.Message().Interface().(*FeeParams)
-	case "inference.inference.Params.maintenance_params":
-		x.MaintenanceParams = value.Message().Interface().(*MaintenanceParams)
 	case "inference.inference.Params.delegation_params":
 		x.DelegationParams = value.Message().Interface().(*DelegationParams)
+	case "inference.inference.Params.maintenance_params":
+		x.MaintenanceParams = value.Message().Interface().(*MaintenanceParams)
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: inference.inference.Params"))
@@ -540,16 +540,16 @@ func (x *fastReflection_Params) Mutable(fd protoreflect.FieldDescriptor) protore
 			x.FeeParams = new(FeeParams)
 		}
 		return protoreflect.ValueOfMessage(x.FeeParams.ProtoReflect())
-	case "inference.inference.Params.maintenance_params":
-		if x.MaintenanceParams == nil {
-			x.MaintenanceParams = new(MaintenanceParams)
-		}
-		return protoreflect.ValueOfMessage(x.MaintenanceParams.ProtoReflect())
 	case "inference.inference.Params.delegation_params":
 		if x.DelegationParams == nil {
 			x.DelegationParams = new(DelegationParams)
 		}
 		return protoreflect.ValueOfMessage(x.DelegationParams.ProtoReflect())
+	case "inference.inference.Params.maintenance_params":
+		if x.MaintenanceParams == nil {
+			x.MaintenanceParams = new(MaintenanceParams)
+		}
+		return protoreflect.ValueOfMessage(x.MaintenanceParams.ProtoReflect())
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: inference.inference.Params"))
@@ -608,11 +608,11 @@ func (x *fastReflection_Params) NewField(fd protoreflect.FieldDescriptor) protor
 	case "inference.inference.Params.fee_params":
 		m := new(FeeParams)
 		return protoreflect.ValueOfMessage(m.ProtoReflect())
-	case "inference.inference.Params.maintenance_params":
-		m := new(MaintenanceParams)
-		return protoreflect.ValueOfMessage(m.ProtoReflect())
 	case "inference.inference.Params.delegation_params":
 		m := new(DelegationParams)
+		return protoreflect.ValueOfMessage(m.ProtoReflect())
+	case "inference.inference.Params.maintenance_params":
+		m := new(MaintenanceParams)
 		return protoreflect.ValueOfMessage(m.ProtoReflect())
 	default:
 		if fd.IsExtension() {
@@ -743,12 +743,12 @@ func (x *fastReflection_Params) ProtoMethods() *protoiface.Methods {
 			l = options.Size(x.FeeParams)
 			n += 1 + l + runtime.Sov(uint64(l))
 		}
-		if x.MaintenanceParams != nil {
-			l = options.Size(x.MaintenanceParams)
-			n += 2 + l + runtime.Sov(uint64(l))
-		}
 		if x.DelegationParams != nil {
 			l = options.Size(x.DelegationParams)
+			n += 2 + l + runtime.Sov(uint64(l))
+		}
+		if x.MaintenanceParams != nil {
+			l = options.Size(x.MaintenanceParams)
 			n += 2 + l + runtime.Sov(uint64(l))
 		}
 		if x.unknownFields != nil {
@@ -780,8 +780,8 @@ func (x *fastReflection_Params) ProtoMethods() *protoiface.Methods {
 			i -= len(x.unknownFields)
 			copy(dAtA[i:], x.unknownFields)
 		}
-		if x.DelegationParams != nil {
-			encoded, err := options.Marshal(x.DelegationParams)
+		if x.MaintenanceParams != nil {
+			encoded, err := options.Marshal(x.MaintenanceParams)
 			if err != nil {
 				return protoiface.MarshalOutput{
 					NoUnkeyedLiterals: input.NoUnkeyedLiterals,
@@ -796,8 +796,8 @@ func (x *fastReflection_Params) ProtoMethods() *protoiface.Methods {
 			i--
 			dAtA[i] = 0x8a
 		}
-		if x.MaintenanceParams != nil {
-			encoded, err := options.Marshal(x.MaintenanceParams)
+		if x.DelegationParams != nil {
+			encoded, err := options.Marshal(x.DelegationParams)
 			if err != nil {
 				return protoiface.MarshalOutput{
 					NoUnkeyedLiterals: input.NoUnkeyedLiterals,
@@ -1613,42 +1613,6 @@ func (x *fastReflection_Params) ProtoMethods() *protoiface.Methods {
 				iNdEx = postIndex
 			case 16:
 				if wireType != 2 {
-					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field MaintenanceParams", wireType)
-				}
-				var msglen int
-				for shift := uint(0); ; shift += 7 {
-					if shift >= 64 {
-						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
-					}
-					if iNdEx >= l {
-						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
-					}
-					b := dAtA[iNdEx]
-					iNdEx++
-					msglen |= int(b&0x7F) << shift
-					if b < 0x80 {
-						break
-					}
-				}
-				if msglen < 0 {
-					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
-				}
-				postIndex := iNdEx + msglen
-				if postIndex < 0 {
-					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
-				}
-				if postIndex > l {
-					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
-				}
-				if x.MaintenanceParams == nil {
-					x.MaintenanceParams = &MaintenanceParams{}
-				}
-				if err := options.Unmarshal(dAtA[iNdEx:postIndex], x.MaintenanceParams); err != nil {
-					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, err
-				}
-				iNdEx = postIndex
-			case 17:
-				if wireType != 2 {
 					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field DelegationParams", wireType)
 				}
 				var msglen int
@@ -1680,6 +1644,42 @@ func (x *fastReflection_Params) ProtoMethods() *protoiface.Methods {
 					x.DelegationParams = &DelegationParams{}
 				}
 				if err := options.Unmarshal(dAtA[iNdEx:postIndex], x.DelegationParams); err != nil {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, err
+				}
+				iNdEx = postIndex
+			case 17:
+				if wireType != 2 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field MaintenanceParams", wireType)
+				}
+				var msglen int
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
+					}
+					if iNdEx >= l {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					msglen |= int(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+				if msglen < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				postIndex := iNdEx + msglen
+				if postIndex < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				if postIndex > l {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+				}
+				if x.MaintenanceParams == nil {
+					x.MaintenanceParams = &MaintenanceParams{}
+				}
+				if err := options.Unmarshal(dAtA[iNdEx:postIndex], x.MaintenanceParams); err != nil {
 					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, err
 				}
 				iNdEx = postIndex
@@ -20286,8 +20286,12 @@ type Params struct {
 	TransferAgentAccessParams *TransferAgentAccessParams `protobuf:"bytes,13,opt,name=transfer_agent_access_params,json=transferAgentAccessParams,proto3" json:"transfer_agent_access_params,omitempty"`
 	DevshardEscrowParams      *DevshardEscrowParams      `protobuf:"bytes,14,opt,name=devshard_escrow_params,json=devshardEscrowParams,proto3" json:"devshard_escrow_params,omitempty"`
 	FeeParams                 *FeeParams                 `protobuf:"bytes,15,opt,name=fee_params,json=feeParams,proto3" json:"fee_params,omitempty"`
-	MaintenanceParams         *MaintenanceParams         `protobuf:"bytes,16,opt,name=maintenance_params,json=maintenanceParams,proto3" json:"maintenance_params,omitempty"`
-	DelegationParams          *DelegationParams          `protobuf:"bytes,17,opt,name=delegation_params,json=delegationParams,proto3" json:"delegation_params,omitempty"`
+	// Field numbers 16 and 17 are wire-format-locked to match the upstream
+	// multi-model branch (which shipped delegation_params=16 first). Renumbering
+	// would silently lose DelegationParams from any chain that already stored
+	// params under field 16.
+	DelegationParams  *DelegationParams  `protobuf:"bytes,16,opt,name=delegation_params,json=delegationParams,proto3" json:"delegation_params,omitempty"`
+	MaintenanceParams *MaintenanceParams `protobuf:"bytes,17,opt,name=maintenance_params,json=maintenanceParams,proto3" json:"maintenance_params,omitempty"`
 }
 
 func (x *Params) Reset() {
@@ -20415,16 +20419,16 @@ func (x *Params) GetFeeParams() *FeeParams {
 	return nil
 }
 
-func (x *Params) GetMaintenanceParams() *MaintenanceParams {
+func (x *Params) GetDelegationParams() *DelegationParams {
 	if x != nil {
-		return x.MaintenanceParams
+		return x.DelegationParams
 	}
 	return nil
 }
 
-func (x *Params) GetDelegationParams() *DelegationParams {
+func (x *Params) GetMaintenanceParams() *MaintenanceParams {
 	if x != nil {
-		return x.DelegationParams
+		return x.MaintenanceParams
 	}
 	return nil
 }
@@ -22544,17 +22548,17 @@ var file_inference_inference_params_proto_rawDesc = []byte{
 	0x0f, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x1e, 0x2e, 0x69, 0x6e, 0x66, 0x65, 0x72, 0x65, 0x6e, 0x63,
 	0x65, 0x2e, 0x69, 0x6e, 0x66, 0x65, 0x72, 0x65, 0x6e, 0x63, 0x65, 0x2e, 0x46, 0x65, 0x65, 0x50,
 	0x61, 0x72, 0x61, 0x6d, 0x73, 0x52, 0x09, 0x66, 0x65, 0x65, 0x50, 0x61, 0x72, 0x61, 0x6d, 0x73,
-	0x12, 0x55, 0x0a, 0x12, 0x6d, 0x61, 0x69, 0x6e, 0x74, 0x65, 0x6e, 0x61, 0x6e, 0x63, 0x65, 0x5f,
-	0x70, 0x61, 0x72, 0x61, 0x6d, 0x73, 0x18, 0x10, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x26, 0x2e, 0x69,
-	0x6e, 0x66, 0x65, 0x72, 0x65, 0x6e, 0x63, 0x65, 0x2e, 0x69, 0x6e, 0x66, 0x65, 0x72, 0x65, 0x6e,
-	0x63, 0x65, 0x2e, 0x4d, 0x61, 0x69, 0x6e, 0x74, 0x65, 0x6e, 0x61, 0x6e, 0x63, 0x65, 0x50, 0x61,
-	0x72, 0x61, 0x6d, 0x73, 0x52, 0x11, 0x6d, 0x61, 0x69, 0x6e, 0x74, 0x65, 0x6e, 0x61, 0x6e, 0x63,
-	0x65, 0x50, 0x61, 0x72, 0x61, 0x6d, 0x73, 0x12, 0x52, 0x0a, 0x11, 0x64, 0x65, 0x6c, 0x65, 0x67,
-	0x61, 0x74, 0x69, 0x6f, 0x6e, 0x5f, 0x70, 0x61, 0x72, 0x61, 0x6d, 0x73, 0x18, 0x11, 0x20, 0x01,
-	0x28, 0x0b, 0x32, 0x25, 0x2e, 0x69, 0x6e, 0x66, 0x65, 0x72, 0x65, 0x6e, 0x63, 0x65, 0x2e, 0x69,
-	0x6e, 0x66, 0x65, 0x72, 0x65, 0x6e, 0x63, 0x65, 0x2e, 0x44, 0x65, 0x6c, 0x65, 0x67, 0x61, 0x74,
-	0x69, 0x6f, 0x6e, 0x50, 0x61, 0x72, 0x61, 0x6d, 0x73, 0x52, 0x10, 0x64, 0x65, 0x6c, 0x65, 0x67,
-	0x61, 0x74, 0x69, 0x6f, 0x6e, 0x50, 0x61, 0x72, 0x61, 0x6d, 0x73, 0x3a, 0x25, 0xe8, 0xa0, 0x1f,
+	0x12, 0x52, 0x0a, 0x11, 0x64, 0x65, 0x6c, 0x65, 0x67, 0x61, 0x74, 0x69, 0x6f, 0x6e, 0x5f, 0x70,
+	0x61, 0x72, 0x61, 0x6d, 0x73, 0x18, 0x10, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x25, 0x2e, 0x69, 0x6e,
+	0x66, 0x65, 0x72, 0x65, 0x6e, 0x63, 0x65, 0x2e, 0x69, 0x6e, 0x66, 0x65, 0x72, 0x65, 0x6e, 0x63,
+	0x65, 0x2e, 0x44, 0x65, 0x6c, 0x65, 0x67, 0x61, 0x74, 0x69, 0x6f, 0x6e, 0x50, 0x61, 0x72, 0x61,
+	0x6d, 0x73, 0x52, 0x10, 0x64, 0x65, 0x6c, 0x65, 0x67, 0x61, 0x74, 0x69, 0x6f, 0x6e, 0x50, 0x61,
+	0x72, 0x61, 0x6d, 0x73, 0x12, 0x55, 0x0a, 0x12, 0x6d, 0x61, 0x69, 0x6e, 0x74, 0x65, 0x6e, 0x61,
+	0x6e, 0x63, 0x65, 0x5f, 0x70, 0x61, 0x72, 0x61, 0x6d, 0x73, 0x18, 0x11, 0x20, 0x01, 0x28, 0x0b,
+	0x32, 0x26, 0x2e, 0x69, 0x6e, 0x66, 0x65, 0x72, 0x65, 0x6e, 0x63, 0x65, 0x2e, 0x69, 0x6e, 0x66,
+	0x65, 0x72, 0x65, 0x6e, 0x63, 0x65, 0x2e, 0x4d, 0x61, 0x69, 0x6e, 0x74, 0x65, 0x6e, 0x61, 0x6e,
+	0x63, 0x65, 0x50, 0x61, 0x72, 0x61, 0x6d, 0x73, 0x52, 0x11, 0x6d, 0x61, 0x69, 0x6e, 0x74, 0x65,
+	0x6e, 0x61, 0x6e, 0x63, 0x65, 0x50, 0x61, 0x72, 0x61, 0x6d, 0x73, 0x3a, 0x25, 0xe8, 0xa0, 0x1f,
 	0x01, 0x8a, 0xe7, 0xb0, 0x2a, 0x1c, 0x69, 0x6e, 0x66, 0x65, 0x72, 0x65, 0x6e, 0x63, 0x65, 0x2f,
 	0x78, 0x2f, 0x69, 0x6e, 0x66, 0x65, 0x72, 0x65, 0x6e, 0x63, 0x65, 0x2f, 0x50, 0x61, 0x72, 0x61,
 	0x6d, 0x73, 0x52, 0x14, 0x73, 0x75, 0x62, 0x6e, 0x65, 0x74, 0x5f, 0x65, 0x73, 0x63, 0x72, 0x6f,
@@ -23304,8 +23308,8 @@ var file_inference_inference_params_proto_depIdxs = []int32{
 	19, // 12: inference.inference.Params.transfer_agent_access_params:type_name -> inference.inference.TransferAgentAccessParams
 	22, // 13: inference.inference.Params.devshard_escrow_params:type_name -> inference.inference.DevshardEscrowParams
 	23, // 14: inference.inference.Params.fee_params:type_name -> inference.inference.FeeParams
-	1,  // 15: inference.inference.Params.maintenance_params:type_name -> inference.inference.MaintenanceParams
-	20, // 16: inference.inference.Params.delegation_params:type_name -> inference.inference.DelegationParams
+	20, // 15: inference.inference.Params.delegation_params:type_name -> inference.inference.DelegationParams
+	1,  // 16: inference.inference.Params.maintenance_params:type_name -> inference.inference.MaintenanceParams
 	10, // 17: inference.inference.GenesisOnlyParams.max_individual_power_percentage:type_name -> inference.inference.Decimal
 	10, // 18: inference.inference.GenesisOnlyParams.genesis_guardian_multiplier:type_name -> inference.inference.Decimal
 	10, // 19: inference.inference.TokenomicsParams.subsidy_reduction_interval:type_name -> inference.inference.Decimal

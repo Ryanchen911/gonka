@@ -515,6 +515,13 @@ data class ExemptionUsageEntry(
 // -----------------------
 // Maintenance Window Parameters
 // -----------------------
+// Defaults below mirror the chain's Default* constants in
+// inference-chain/x/inference/types/params.go (DefaultMaintenanceEnabled,
+// DefaultMaintenanceMinScheduleLeadBlocks, DefaultMaintenanceMaxWindowBlocks,
+// DefaultMaintenanceMaxConcurrentValidators, DefaultMaintenanceMaxConcurrentPowerBps,
+// DefaultMaintenanceCreditCapBlocks, DefaultMaintenanceCreditEarnPerEpochBlocks).
+// Keep the two sides in lockstep — testermint exercises real chain genesis,
+// so any drift here will silently mask a bug rather than expose it.
 
 data class MaintenanceParams(
     @SerializedName("maintenance_enabled")

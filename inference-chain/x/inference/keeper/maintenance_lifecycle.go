@@ -90,8 +90,11 @@ func (k Keeper) activateMaintenanceReservation(ctx context.Context, sdkCtx sdk.C
 		return fmt.Errorf("reservation %d is not in scheduled state (status=%d)", reservationID, r.Status)
 	}
 
-	// Activation-time advisory re-check (Task 3.4 will add full logic)
-	// For now, just emit a warning if caps would be exceeded
+	// Concurrency caps were enforced when the reservation was scheduled. Re-check
+	// at activation time for visibility only: chain conditions (validator set,
+	// other windows, governance params) may have changed in the interim. The
+	// reservation still activates regardless; any breach is recorded as an
+	// advisory ActivationWarning on the reservation and surfaced in the log.
 	warning := k.checkActivationTimeConcurrency(ctx, r, mp)
 	if warning != "" {
 		r.ActivationWarning = warning
@@ -124,10 +127,15 @@ func (k Keeper) activateMaintenanceReservation(ctx context.Context, sdkCtx sdk.C
 	state.ActiveReservationId = reservationID
 	state.ScheduledReservationId = 0
 
-	// Mark maintenance usage for the current epoch (suppresses credit accrual)
+	// Mark the activation epoch as the start of the credit-suppression range.
+	// LastMaintenanceEndEpoch is provisionally set to the same value and will be
+	// overwritten at completion to reflect the true end epoch. While the window
+	// is still ACTIVE, the active-reservation overlap check in GrantMaintenanceCredit
+	// covers any in-progress epoch regardless of these fields.
 	epochIndex, found := k.GetEffectiveEpochIndex(ctx)
 	if found {
 		state.LastMaintenanceEpoch = epochIndex
+		state.LastMaintenanceEndEpoch = epochIndex
 	}
 
 	if err := k.SetMaintenanceState(ctx, state); err != nil {
@@ -174,13 +182,22 @@ func (k Keeper) completeMaintenanceReservation(ctx context.Context, sdkCtx sdk.C
 		return err
 	}
 
-	// Clear participant's active reservation reference
+	// Clear participant's active reservation reference and record the end
+	// epoch so credit accrual stays suppressed for any past epoch the window
+	// covered, even after the window has finished. Combined with the start
+	// epoch written at activation, this defines a closed [start, end] range
+	// over which GrantMaintenanceCredit will skip — preventing double-dip
+	// when a multi-epoch maintenance ends and a delayed claim arrives for
+	// one of the covered epochs.
 	participantAddr, err := sdk.AccAddressFromBech32(r.Participant)
 	if err != nil {
 		return err
 	}
 	state := k.GetOrCreateMaintenanceState(ctx, participantAddr)
 	state.ActiveReservationId = 0
+	if epochIndex, found := k.GetEffectiveEpochIndex(ctx); found {
+		state.LastMaintenanceEndEpoch = epochIndex
+	}
 	if err := k.SetMaintenanceState(ctx, state); err != nil {
 		return err
 	}

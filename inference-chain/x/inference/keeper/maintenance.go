@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 
 	"cosmossdk.io/collections"
 	sdk "github.com/cosmos/cosmos-sdk/types"
@@ -198,6 +199,38 @@ func (k Keeper) iterateIndexedReservations(
 	return nil
 }
 
+// activeReservationCoversEpoch reports whether the given ACTIVE reservation's
+// block range overlaps any block belonging to epochIndex. Used to suppress
+// credit accrual for a granted epoch while the participant's maintenance is
+// in-progress.
+//
+// The epoch's block range is approximated as
+// [PocStartBlockHeight(epochIndex), PocStartBlockHeight(epochIndex+1) - 1].
+// If the next epoch is not yet recorded (the granted epoch is the latest),
+// we treat the epoch as extending indefinitely on the right — this is safe
+// for credit suppression: an unbounded right edge can only widen the overlap,
+// erring toward more suppression rather than missed suppression.
+func (k Keeper) activeReservationCoversEpoch(ctx context.Context, r types.MaintenanceReservation, epochIndex uint64) bool {
+	epoch, found := k.GetEpoch(ctx, epochIndex)
+	if !found {
+		// Without epoch metadata we cannot bound the overlap; fall back to a
+		// permissive suppression so credit cannot leak through an unrecognized
+		// epoch index.
+		return true
+	}
+	epochStart := epoch.PocStartBlockHeight
+
+	epochEnd := int64(math.MaxInt64)
+	if next, ok := k.GetEpoch(ctx, epochIndex+1); ok && next.PocStartBlockHeight > 0 {
+		epochEnd = next.PocStartBlockHeight - 1
+	}
+
+	resStart := r.StartHeight
+	resEnd := r.StartHeight + int64(r.DurationBlocks) - 1
+
+	return resStart <= epochEnd && resEnd >= epochStart
+}
+
 // --- Credit accrual ---
 
 // GrantMaintenanceCredit grants maintenance credit to a participant after a
@@ -227,18 +260,45 @@ func (k Keeper) GrantMaintenanceCredit(ctx context.Context, participant string, 
 
 	state := k.GetOrCreateMaintenanceState(ctx, participantAddr)
 
-	// Do not grant credit if maintenance was activated in this epoch.
-	// Note the `epochIndex != 0` guard: proto-default LastMaintenanceEpoch is
-	// 0 for participants that have never activated maintenance, so without
-	// the guard every fresh participant would have credit suppressed during
-	// epoch 0. The trade-off is that a participant who genuinely activates
-	// maintenance during epoch 0 still earns credit at the epoch-0 settlement.
-	// Epoch 0 is the bootstrap epoch and short-lived, so this edge case is
-	// accepted; a proto-level sentinel field would be required to close it
-	// fully. See proposals/maintenance-windows for context.
-	if state.LastMaintenanceEpoch == epochIndex && epochIndex != 0 {
-		k.LogDebug("Maintenance credit skipped: used in this epoch",
-			types.Maintenance, "participant", participant, "epoch", epochIndex)
+	// Suppress credit accrual for any epoch covered by a maintenance window.
+	// Two checks, in order:
+	//
+	// 1. Currently in active maintenance: if the granted epoch's block range
+	//    overlaps the active reservation's [start, end] block range, skip.
+	//    This catches multi-epoch windows where the granted epoch is mid-window.
+	//
+	// 2. Most recent (possibly already completed) window covered the granted
+	//    epoch: skip if epochIndex falls in [LastMaintenanceEpoch,
+	//    LastMaintenanceEndEpoch] inclusive. The end epoch is written at
+	//    completion (BeginBlock) to the epoch in which the window's last block
+	//    fell. Tracks only the most recent window, which suffices for the
+	//    typical claim cadence (claim each epoch shortly after it ends);
+	//    out-of-order claims spanning multiple historical windows would
+	//    require per-epoch tracking and are not covered here.
+	//
+	// `epochIndex != 0` guard: proto-default LastMaintenanceEpoch is 0 for
+	// participants that have never activated maintenance, so without the
+	// guard every fresh participant would have credit suppressed at epoch 0.
+	// A participant who genuinely activates maintenance during epoch 0 still
+	// earns credit at the epoch-0 settlement; epoch 0 is the bootstrap epoch
+	// and short-lived, so this edge case is accepted.
+	if state.ActiveReservationId != 0 {
+		if r, ok := k.GetMaintenanceReservation(ctx, state.ActiveReservationId); ok {
+			if k.activeReservationCoversEpoch(ctx, r, epochIndex) {
+				k.LogDebug("Maintenance credit skipped: epoch overlaps active window",
+					types.Maintenance, "participant", participant, "epoch", epochIndex,
+					"reservation_id", state.ActiveReservationId)
+				return nil
+			}
+		}
+	}
+	if epochIndex != 0 &&
+		state.LastMaintenanceEpoch <= epochIndex &&
+		epochIndex <= state.LastMaintenanceEndEpoch {
+		k.LogDebug("Maintenance credit skipped: epoch within most recent window range",
+			types.Maintenance, "participant", participant, "epoch", epochIndex,
+			"window_start_epoch", state.LastMaintenanceEpoch,
+			"window_end_epoch", state.LastMaintenanceEndEpoch)
 		return nil
 	}
 

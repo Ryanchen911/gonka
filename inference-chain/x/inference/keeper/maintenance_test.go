@@ -351,18 +351,6 @@ func TestCancelMaintenance_CreditCapRespected(t *testing.T) {
 
 // --- 7.1: Credit Accrual Tests ---
 
-func TestCreditAccrual_BasicGrant(t *testing.T) {
-	t.Parallel()
-	k, _, ctx := setupMaintenanceTest(t)
-	participant := sample.AccAddress()
-	registerParticipant(t, k, ctx, participant)
-
-	// Initially no state
-	addr, _ := sdk.AccAddressFromBech32(participant)
-	state := k.GetOrCreateMaintenanceState(ctx, addr)
-	require.Equal(t, uint64(0), state.CreditBlocks)
-}
-
 func TestCreditAccrual_CapEnforced(t *testing.T) {
 	t.Parallel()
 	k, _, ctx := setupMaintenanceTest(t)
@@ -384,6 +372,36 @@ func TestCreditAccrual_CapEnforced(t *testing.T) {
 	require.NoError(t, k.GrantMaintenanceCredit(ctx, participant, 2))
 	state, _ = k.GetMaintenanceState(ctx, addr)
 	require.Equal(t, uint64(400), state.CreditBlocks, "subsequent grants must not exceed the cap")
+}
+
+// TestCreditAccrual_SuppressedAcrossEpochRange verifies that credit is not
+// granted for any epoch within [LastMaintenanceEpoch, LastMaintenanceEndEpoch],
+// covering multi-epoch maintenance windows after they have completed.
+func TestCreditAccrual_SuppressedAcrossEpochRange(t *testing.T) {
+	t.Parallel()
+	k, _, ctx := setupMaintenanceTest(t)
+	participant := sample.AccAddress()
+	registerParticipant(t, k, ctx, participant)
+	addr, _ := sdk.AccAddressFromBech32(participant)
+
+	// Simulate a completed multi-epoch maintenance window covering epochs 5..7.
+	state := k.GetOrCreateMaintenanceState(ctx, addr)
+	state.CreditBlocks = 100
+	state.LastMaintenanceEpoch = 5
+	state.LastMaintenanceEndEpoch = 7
+	require.NoError(t, k.SetMaintenanceState(ctx, state))
+
+	// Claims for any covered epoch must not increase credit.
+	for _, e := range []uint64{5, 6, 7} {
+		require.NoError(t, k.GrantMaintenanceCredit(ctx, participant, e))
+		st, _ := k.GetMaintenanceState(ctx, addr)
+		require.Equal(t, uint64(100), st.CreditBlocks, "credit must be suppressed for covered epoch %d", e)
+	}
+
+	// A claim for an uncovered later epoch must accrue credit normally.
+	require.NoError(t, k.GrantMaintenanceCredit(ctx, participant, 8))
+	st, _ := k.GetMaintenanceState(ctx, addr)
+	require.Equal(t, uint64(120), st.CreditBlocks, "credit must accrue for epoch outside covered range")
 }
 
 // --- 7.1: Lifecycle Tests ---

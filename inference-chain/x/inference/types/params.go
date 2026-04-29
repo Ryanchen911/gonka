@@ -350,6 +350,15 @@ func DefaultMaintenanceParams() *MaintenanceParams {
 	}
 }
 
+// maxMaintenanceBlocksParam bounds every governance-controlled *Blocks field.
+// Set well below math.MaxInt64 so any addition of two such values, or any
+// cast from uint64 to int64, cannot wrap. Concretely: at 5-second blocks,
+// 1e15 blocks is ~158 million years — far beyond any realistic governance
+// configuration, while still safe for arithmetic in callers like
+// msg_server_schedule_maintenance.go (blockHeight + lead) and
+// GrantMaintenanceCredit (CreditBlocks += earn).
+const maxMaintenanceBlocksParam = uint64(1e15)
+
 func (p *MaintenanceParams) Validate() error {
 	if p == nil {
 		return nil
@@ -357,8 +366,17 @@ func (p *MaintenanceParams) Validate() error {
 	if p.MaintenanceMaxWindowBlocks == 0 {
 		return fmt.Errorf("maintenance max window blocks must be positive")
 	}
+	if p.MaintenanceMaxWindowBlocks > maxMaintenanceBlocksParam {
+		return fmt.Errorf("maintenance max window blocks (%d) exceeds safe upper bound %d", p.MaintenanceMaxWindowBlocks, maxMaintenanceBlocksParam)
+	}
+	if p.MaintenanceMinScheduleLeadBlocks > maxMaintenanceBlocksParam {
+		return fmt.Errorf("maintenance min schedule lead blocks (%d) exceeds safe upper bound %d", p.MaintenanceMinScheduleLeadBlocks, maxMaintenanceBlocksParam)
+	}
 	if p.MaintenanceCreditCapBlocks == 0 {
 		return fmt.Errorf("maintenance credit cap blocks must be positive")
+	}
+	if p.MaintenanceCreditCapBlocks > maxMaintenanceBlocksParam {
+		return fmt.Errorf("maintenance credit cap blocks (%d) exceeds safe upper bound %d", p.MaintenanceCreditCapBlocks, maxMaintenanceBlocksParam)
 	}
 	if p.MaintenanceMaxConcurrentValidators == 0 {
 		return fmt.Errorf("maintenance max concurrent validators must be positive")
