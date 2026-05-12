@@ -621,6 +621,117 @@ func TestMsgServer_ClaimRewards_ValidationLogic(t *testing.T) {
 	require.True(t, updatedPerfSummary.Claimed)
 }
 
+func TestMsgServer_ClaimRewards_MaintenanceWindowExemptsValidationAcrossEpochRange(t *testing.T) {
+	k, ms, ctx, mocks := setupKeeperWithMocks(t)
+	sdkCtx := sdk.UnwrapSDKContext(ctx)
+
+	privKey := secp256k1.GenPrivKey()
+	pubKey := privKey.PubKey()
+
+	seed := uint64(12345)
+	seedBytes := make([]byte, 8)
+	binary.BigEndian.PutUint64(seedBytes, seed)
+	signature, err := privKey.Sign(seedBytes)
+	require.NoError(t, err)
+
+	epochIndex := uint64(6)
+	epoch := types.Epoch{Index: epochIndex, PocStartBlockHeight: 600}
+	currentEpoch := types.Epoch{Index: epochIndex + 1, PocStartBlockHeight: 640}
+	require.NoError(t, k.SetEpoch(sdkCtx, &epoch))
+	require.NoError(t, k.SetEpoch(sdkCtx, &currentEpoch))
+	require.NoError(t, k.SetEffectiveEpochIndex(sdkCtx, currentEpoch.Index))
+
+	k.SetEpochGroupData(sdkCtx, types.EpochGroupData{
+		EpochIndex:          currentEpoch.Index,
+		EpochGroupId:        7,
+		PocStartBlockHeight: currentEpoch.Index,
+		ValidationWeights: []*types.ValidationWeight{
+			{MemberAddress: testutil.Creator, Weight: 50},
+		},
+	})
+	k.SetEpochGroupData(sdkCtx, types.EpochGroupData{
+		EpochIndex:          epoch.Index,
+		EpochGroupId:        6,
+		PocStartBlockHeight: epoch.Index,
+		ValidationWeights: []*types.ValidationWeight{
+			{MemberAddress: testutil.Creator, Weight: 80},
+			{MemberAddress: testutil.Executor, Weight: 10},
+			{MemberAddress: testutil.Executor2, Weight: 10},
+		},
+	})
+
+	settleAmount := types.SettleAmount{
+		Participant:   testutil.Creator,
+		EpochIndex:    epochIndex,
+		WorkCoins:     1000,
+		RewardCoins:   500,
+		SeedSignature: hex.EncodeToString(signature),
+	}
+	require.NoError(t, k.SetSettleAmount(sdkCtx, settleAmount))
+	require.NoError(t, k.SetEpochPerformanceSummary(sdkCtx, types.EpochPerformanceSummary{
+		EpochIndex:    epochIndex,
+		ParticipantId: testutil.Creator,
+		Claimed:       false,
+	}))
+
+	creatorAddr, err := sdk.AccAddressFromBech32(testutil.Creator)
+	require.NoError(t, err)
+	require.NoError(t, k.Participants.Set(ctx, creatorAddr, types.Participant{
+		Index:   testutil.Creator,
+		Address: testutil.Creator,
+		Status:  types.ParticipantStatus_ACTIVE,
+	}))
+	require.NoError(t, k.SetActiveParticipants(ctx, types.ActiveParticipants{
+		EpochId:      epochIndex,
+		Participants: []*types.ActiveParticipant{{Index: testutil.Creator}},
+	}))
+	require.NoError(t, k.SetActiveParticipants(ctx, types.ActiveParticipants{
+		EpochId:      currentEpoch.Index,
+		Participants: []*types.ActiveParticipant{{Index: testutil.Creator}},
+	}))
+
+	state := k.GetOrCreateMaintenanceState(ctx, creatorAddr)
+	state.LastMaintenanceEpoch = 5
+	state.LastMaintenanceEndEpoch = 7
+	require.NoError(t, k.SetMaintenanceState(ctx, state))
+
+	for i := 1; i <= 10; i++ {
+		executor := testutil.Executor
+		if i%2 == 0 {
+			executor = testutil.Executor2
+		}
+		k.SetInferenceValidationDetails(sdkCtx, types.InferenceValidationDetails{
+			EpochId:            epoch.Index,
+			InferenceId:        fmt.Sprintf("inference%d", i),
+			ExecutorId:         executor,
+			ExecutorReputation: int32(i * 10),
+			TrafficBasis:       1000,
+		})
+	}
+
+	params := types.DefaultParams()
+	params.ValidationParams.MinValidationAverage = types.DecimalFromFloat(0.1)
+	params.ValidationParams.MaxValidationAverage = types.DecimalFromFloat(1.0)
+	params.ValidationParams.ClaimValidationEnabled = true
+	require.NoError(t, k.SetParams(sdkCtx, params))
+
+	mockAccount := authtypes.NewBaseAccount(creatorAddr, pubKey, 0, 0)
+	mocks.AccountKeeper.EXPECT().HasAccount(gomock.Any(), gomock.Any()).Return(true).AnyTimes()
+	mocks.AccountKeeper.EXPECT().GetAccount(gomock.Any(), creatorAddr).Return(mockAccount).AnyTimes()
+	mocks.AuthzKeeper.EXPECT().GranterGrants(gomock.Any(), gomock.Any()).Return(&authztypes.QueryGranterGrantsResponse{Grants: []*authztypes.GrantAuthorization{}}, nil).AnyTimes()
+	mocks.BankKeeper.EXPECT().SendCoinsFromModuleToAccount(gomock.Any(), types.ModuleName, creatorAddr, gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
+
+	resp, err := ms.ClaimRewards(ctx.WithBlockHeight(claimDebounceBlocks+1), &types.MsgClaimRewards{
+		Creator:    testutil.Creator,
+		EpochIndex: epochIndex,
+		Seed:       int64(seed),
+	})
+	require.NoError(t, err)
+	require.NotNil(t, resp)
+	require.Equal(t, uint64(1500), resp.Amount)
+	require.Equal(t, "Rewards claimed successfully", resp.Result)
+}
+
 // TestMsgServer_ClaimRewards_PartialValidation tests the validation logic in ClaimRewards
 // with partial validation. It tests that the validator only needs to validate
 // the inferences that should be validated according to the ShouldValidate function.

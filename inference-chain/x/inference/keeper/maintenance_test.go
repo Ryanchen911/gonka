@@ -237,6 +237,42 @@ func TestScheduleMaintenance_Failures(t *testing.T) {
 	}
 }
 
+func TestScheduleMaintenance_RejectsPoCOverlapBeyondFixedFutureEpochScan(t *testing.T) {
+	t.Parallel()
+	k, ms, ctx := setupMaintenanceTest(t)
+
+	participant := sample.AccAddress()
+	registerParticipant(t, k, ctx, participant)
+
+	params, err := k.GetParams(ctx)
+	require.NoError(t, err)
+	params.MaintenanceParams.MaintenanceMaxWindowBlocks = 1_000_000_000_000_000
+	require.NoError(t, k.SetParams(ctx, params))
+
+	effectiveEpoch := types.Epoch{Index: 1, PocStartBlockHeight: 100}
+	require.NoError(t, k.SetEpoch(ctx, &effectiveEpoch))
+	require.NoError(t, k.SetEffectiveEpochIndex(ctx, effectiveEpoch.Index))
+
+	lastScannedEpoch := types.NewEpochContext(effectiveEpoch, *params.EpochParams)
+	for i := 0; i < 5; i++ {
+		lastScannedEpoch = lastScannedEpoch.NextEpochContext()
+	}
+	firstUnscannedEpoch := lastScannedEpoch.NextEpochContext()
+
+	startHeight := lastScannedEpoch.SetNewValidators() + 1
+	durationBlocks := uint64(firstUnscannedEpoch.StartOfPoC() - startHeight + 1)
+	require.Positive(t, durationBlocks)
+	grantCredit(t, k, ctx, participant, durationBlocks)
+
+	_, err = ms.ScheduleMaintenance(ctx, &types.MsgScheduleMaintenance{
+		Creator:        participant,
+		Participant:    participant,
+		StartHeight:    startHeight,
+		DurationBlocks: durationBlocks,
+	})
+	require.ErrorIs(t, err, types.ErrMaintenanceOverlapsPoCPhase)
+}
+
 // --- 7.1: Cancellation Tests ---
 
 func TestCancelMaintenance_Success(t *testing.T) {
