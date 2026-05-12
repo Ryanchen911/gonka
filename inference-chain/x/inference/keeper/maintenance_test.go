@@ -496,6 +496,46 @@ func TestLifecycle_ActivateAndComplete(t *testing.T) {
 	require.Equal(t, uint64(0), state.ActiveReservationId)
 }
 
+func TestLifecycle_ActiveReservationCompletesWhenMaintenanceDisabled(t *testing.T) {
+	t.Parallel()
+	k, ms, ctx := setupMaintenanceTest(t)
+	participant := sample.AccAddress()
+	registerParticipant(t, k, ctx, participant)
+	grantCredit(t, k, ctx, participant, 100)
+
+	resp, err := ms.ScheduleMaintenance(ctx, &types.MsgScheduleMaintenance{
+		Creator:      participant,
+		Participant:  participant,
+		StartHeight:  500,
+		DurationBlocks: 50,
+	})
+	require.NoError(t, err)
+
+	activateCtx := ctx.WithBlockHeight(500)
+	require.NoError(t, k.ProcessMaintenanceTransitions(activateCtx))
+
+	addr, err := sdk.AccAddressFromBech32(participant)
+	require.NoError(t, err)
+	require.True(t, k.IsParticipantInActiveMaintenance(activateCtx, addr))
+
+	params, err := k.GetParams(activateCtx)
+	require.NoError(t, err)
+	params.MaintenanceParams.MaintenanceEnabled = false
+	require.NoError(t, k.SetParams(activateCtx, params))
+
+	completeCtx := ctx.WithBlockHeight(550) // 500 + 50
+	require.NoError(t, k.ProcessMaintenanceTransitions(completeCtx))
+
+	r, found := k.GetMaintenanceReservation(completeCtx, resp.ReservationId)
+	require.True(t, found)
+	require.Equal(t, types.MaintenanceReservationStatus_MAINTENANCE_RESERVATION_STATUS_COMPLETED, r.Status)
+
+	state, found := k.GetMaintenanceState(completeCtx, addr)
+	require.True(t, found)
+	require.Equal(t, uint64(0), state.ActiveReservationId)
+	require.False(t, k.IsParticipantInActiveMaintenance(completeCtx, addr))
+}
+
 func TestLifecycle_NoTransitionsAtWrongHeight(t *testing.T) {
 	t.Parallel()
 	k, ms, ctx := setupMaintenanceTest(t)
