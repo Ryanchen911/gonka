@@ -3,6 +3,7 @@ package keeper
 import (
 	"context"
 	"fmt"
+	"math"
 	"sort"
 	"strings"
 
@@ -26,9 +27,7 @@ func (k Keeper) ProcessMaintenanceTransitions(ctx context.Context) error {
 	blockHeight := sdkCtx.BlockHeight()
 
 	mp := k.GetMaintenanceParams(ctx)
-	if mp == nil || !mp.MaintenanceEnabled {
-		return nil
-	}
+	maintenanceEnabled := mp != nil && mp.MaintenanceEnabled
 
 	// Collect transitions to process (we must not modify during iteration)
 	type pendingTransition struct {
@@ -51,6 +50,13 @@ func (k Keeper) ProcessMaintenanceTransitions(ctx context.Context) error {
 	for _, t := range transitions {
 		switch types.MaintenanceTransitionType(t.transitionType) {
 		case types.MaintenanceTransitionType_MAINTENANCE_TRANSITION_TYPE_ACTIVATE:
+			if !maintenanceEnabled {
+				if err := k.cancelScheduledReservationBecauseMaintenanceDisabled(ctx, sdkCtx, t.reservationID); err != nil {
+					k.LogError("Failed to cancel disabled maintenance reservation",
+						types.Maintenance, "reservation_id", t.reservationID, "error", err)
+				}
+				break
+			}
 			if err := k.activateMaintenanceReservation(ctx, sdkCtx, t.reservationID, mp); err != nil {
 				k.LogError("Failed to activate maintenance reservation",
 					types.Maintenance, "reservation_id", t.reservationID, "error", err)
@@ -76,6 +82,66 @@ func (k Keeper) ProcessMaintenanceTransitions(ctx context.Context) error {
 				types.Maintenance, "reservation_id", t.reservationID, "error", err)
 		}
 	}
+
+	return nil
+}
+
+func (k Keeper) cancelScheduledReservationBecauseMaintenanceDisabled(ctx context.Context, sdkCtx sdk.Context, reservationID uint64) error {
+	// The ACTIVATE transition row is the row currently being processed by
+	// ProcessMaintenanceTransitions; that outer loop deletes it after this
+	// helper returns. This helper only removes the future COMPLETE row.
+	r, found := k.GetMaintenanceReservation(ctx, reservationID)
+	if !found {
+		return fmt.Errorf("reservation %d not found", reservationID)
+	}
+	if r.Status != types.MaintenanceReservationStatus_MAINTENANCE_RESERVATION_STATUS_SCHEDULED {
+		return fmt.Errorf("reservation %d is not in scheduled state (status=%d)", reservationID, r.Status)
+	}
+
+	r.Status = types.MaintenanceReservationStatus_MAINTENANCE_RESERVATION_STATUS_CANCELED
+	if err := k.SetMaintenanceReservation(ctx, r); err != nil {
+		return err
+	}
+	if err := k.MaintenanceScheduledIndex.Remove(ctx, reservationID); err != nil {
+		return err
+	}
+
+	participantAddr, err := sdk.AccAddressFromBech32(r.Participant)
+	if err != nil {
+		return err
+	}
+	state := k.GetOrCreateMaintenanceState(ctx, participantAddr)
+	state.CreditBlocks += r.DurationBlocks
+	if mp := k.GetMaintenanceParams(ctx); mp != nil && state.CreditBlocks > mp.MaintenanceCreditCapBlocks {
+		state.CreditBlocks = mp.MaintenanceCreditCapBlocks
+	}
+	state.ScheduledReservationId = 0
+	if err := k.SetMaintenanceState(ctx, state); err != nil {
+		return err
+	}
+
+	if r.DurationBlocks > math.MaxInt64 || r.StartHeight > math.MaxInt64-int64(r.DurationBlocks) {
+		return fmt.Errorf("reservation %d has invalid start/duration that would overflow completion height", r.ReservationId)
+	}
+	completeHeight := r.StartHeight + int64(r.DurationBlocks)
+	if err := k.DeleteMaintenanceTransition(ctx, completeHeight, reservationID); err != nil {
+		return fmt.Errorf("failed to delete disabled reservation complete transition: %w", err)
+	}
+
+	k.LogInfo("Maintenance window canceled because maintenance is disabled",
+		types.Maintenance,
+		"reservation_id", reservationID,
+		"participant", r.Participant,
+		"credit_restored", r.DurationBlocks,
+	)
+
+	sdkCtx.EventManager().EmitEvent(sdk.NewEvent(
+		"maintenance_canceled",
+		sdk.NewAttribute("reservation_id", fmt.Sprint(reservationID)),
+		sdk.NewAttribute("participant", r.Participant),
+		sdk.NewAttribute("credit_restored", fmt.Sprint(r.DurationBlocks)),
+		sdk.NewAttribute("reason", "maintenance_disabled"),
+	))
 
 	return nil
 }

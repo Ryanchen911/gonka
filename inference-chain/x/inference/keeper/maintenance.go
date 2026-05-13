@@ -231,6 +231,22 @@ func (k Keeper) activeReservationCoversEpoch(ctx context.Context, r types.Mainte
 	return resStart <= epochEnd && resEnd >= epochStart
 }
 
+func (k Keeper) maintenanceStateCoversEpoch(ctx context.Context, state types.MaintenanceState, epochIndex uint64) bool {
+	if state.ActiveReservationId != 0 {
+		if r, ok := k.GetMaintenanceReservation(ctx, state.ActiveReservationId); ok &&
+			r.Status == types.MaintenanceReservationStatus_MAINTENANCE_RESERVATION_STATUS_ACTIVE &&
+			k.activeReservationCoversEpoch(ctx, r, epochIndex) {
+			return true
+		}
+	}
+	// Epoch 0 is the proto default for the historical range fields. Only the
+	// persisted LastMaintenanceEpoch/EndEpoch branch needs this guard; an active
+	// reservation is identified by its non-zero ActiveReservationId above.
+	return epochIndex != 0 &&
+		state.LastMaintenanceEpoch <= epochIndex &&
+		epochIndex <= state.LastMaintenanceEndEpoch
+}
+
 // --- Credit accrual ---
 
 // GrantMaintenanceCredit grants maintenance credit to a participant after a
@@ -260,42 +276,8 @@ func (k Keeper) GrantMaintenanceCredit(ctx context.Context, participant string, 
 
 	state := k.GetOrCreateMaintenanceState(ctx, participantAddr)
 
-	// Suppress credit accrual for any epoch covered by a maintenance window.
-	// Two checks, in order:
-	//
-	// 1. Currently in active maintenance: if the granted epoch's block range
-	//    overlaps the active reservation's [start, end] block range, skip.
-	//    This catches multi-epoch windows where the granted epoch is mid-window.
-	//
-	// 2. Most recent (possibly already completed) window covered the granted
-	//    epoch: skip if epochIndex falls in [LastMaintenanceEpoch,
-	//    LastMaintenanceEndEpoch] inclusive. The end epoch is written at
-	//    completion (BeginBlock) to the epoch in which the window's last block
-	//    fell. Tracks only the most recent window, which suffices for the
-	//    typical claim cadence (claim each epoch shortly after it ends);
-	//    out-of-order claims spanning multiple historical windows would
-	//    require per-epoch tracking and are not covered here.
-	//
-	// `epochIndex != 0` guard: proto-default LastMaintenanceEpoch is 0 for
-	// participants that have never activated maintenance, so without the
-	// guard every fresh participant would have credit suppressed at epoch 0.
-	// A participant who genuinely activates maintenance during epoch 0 still
-	// earns credit at the epoch-0 settlement; epoch 0 is the bootstrap epoch
-	// and short-lived, so this edge case is accepted.
-	if state.ActiveReservationId != 0 {
-		if r, ok := k.GetMaintenanceReservation(ctx, state.ActiveReservationId); ok {
-			if k.activeReservationCoversEpoch(ctx, r, epochIndex) {
-				k.LogDebug("Maintenance credit skipped: epoch overlaps active window",
-					types.Maintenance, "participant", participant, "epoch", epochIndex,
-					"reservation_id", state.ActiveReservationId)
-				return nil
-			}
-		}
-	}
-	if epochIndex != 0 &&
-		state.LastMaintenanceEpoch <= epochIndex &&
-		epochIndex <= state.LastMaintenanceEndEpoch {
-		k.LogDebug("Maintenance credit skipped: epoch within most recent window range",
+	if k.maintenanceStateCoversEpoch(ctx, state, epochIndex) {
+		k.LogDebug("Maintenance credit skipped: epoch covered by maintenance window",
 			types.Maintenance, "participant", participant, "epoch", epochIndex,
 			"window_start_epoch", state.LastMaintenanceEpoch,
 			"window_end_epoch", state.LastMaintenanceEndEpoch)
@@ -317,6 +299,10 @@ func (k Keeper) GrantMaintenanceCredit(ctx context.Context, participant string, 
 
 // IsParticipantInActiveMaintenance returns true if the participant has an active maintenance window.
 func (k Keeper) IsParticipantInActiveMaintenance(ctx context.Context, participant sdk.AccAddress) bool {
+	mp := k.GetMaintenanceParams(ctx)
+	if mp == nil || !mp.MaintenanceEnabled {
+		return false
+	}
 	state, found := k.GetMaintenanceState(ctx, participant)
 	if !found {
 		return false
@@ -387,6 +373,10 @@ func (k Keeper) filterOutMaintenanceParticipants(ctx context.Context, members []
 // participation rather than masking maintenance, which is the safer error mode.
 func (k Keeper) CollectActiveMaintenanceAddresses(ctx context.Context) map[string]struct{} {
 	addrs := make(map[string]struct{})
+	mp := k.GetMaintenanceParams(ctx)
+	if mp == nil || !mp.MaintenanceEnabled {
+		return addrs
+	}
 	if err := k.iterateIndexedReservations(ctx, k.MaintenanceActiveIndex, func(r types.MaintenanceReservation) {
 		addrs[r.Participant] = struct{}{}
 	}); err != nil {

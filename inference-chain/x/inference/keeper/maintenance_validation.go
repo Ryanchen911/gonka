@@ -10,11 +10,9 @@ import (
 	"github.com/productscience/inference/x/inference/types"
 )
 
-// maxFutureEpochsToCheck is the maximum number of future epochs to examine when
-// checking for PoC/DKG phase overlaps. 5 is sufficient because the maximum
-// maintenance window duration (MaintenanceMaxWindowBlocks) is governance-capped
-// well below 5 full epoch lengths.
-const maxFutureEpochsToCheck = 5
+// maxEpochPhaseOverlapChecks keeps phase-overlap validation bounded even if
+// governance raises MaintenanceMaxWindowBlocks far beyond normal defaults.
+const maxEpochPhaseOverlapChecks int64 = 10_000
 
 // checkEpochPhaseOverlap verifies the proposed maintenance window does not overlap
 // epoch-critical PoC commit/exchange or DKG (SetNewValidators) phases.
@@ -29,51 +27,62 @@ func (k Keeper) checkEpochPhaseOverlap(ctx context.Context, startHeight int64, d
 	if ep == nil {
 		return nil // no epoch params, skip check
 	}
+	if ep.EpochLength <= 0 {
+		return nil // invalid params are rejected elsewhere; avoid looping here
+	}
 
 	// We need to check against epochs that could overlap with [startHeight, endHeight].
-	// Use the effective epoch as a reference, then check the current and next epoch.
 	effectiveEpoch, found := k.GetEffectiveEpoch(ctx)
 	if !found {
 		return nil // no epoch yet, skip check
 	}
 
-	// Check against the effective epoch and the next few epochs that might overlap
 	ec := types.NewEpochContext(*effectiveEpoch, *ep)
-	epochsToCheck := []types.EpochContext{ec}
+	if startHeight > ec.StartOfPoC() {
+		steps := (startHeight - ec.StartOfPoC()) / ep.EpochLength
+		ec.EpochIndex += uint64(steps)
+		ec.PocStartBlockHeight += steps * ep.EpochLength
+	}
 
-	// Add next epochs until we're past endHeight
-	for i := 0; i < maxFutureEpochsToCheck; i++ {
-		next := epochsToCheck[len(epochsToCheck)-1].NextEpochContext()
+	epochSpan := (endHeight-ec.StartOfPoC())/ep.EpochLength + 1
+	if epochSpan > maxEpochPhaseOverlapChecks {
+		return fmt.Errorf("maintenance window spans more than %d epochs: %w", maxEpochPhaseOverlapChecks, types.ErrMaintenanceDurationExceeded)
+	}
+
+	checkedEpochs := int64(0)
+	for {
+		checkedEpochs++
+		if checkedEpochs > maxEpochPhaseOverlapChecks {
+			return fmt.Errorf("maintenance window spans more than %d epochs: %w", maxEpochPhaseOverlapChecks, types.ErrMaintenanceDurationExceeded)
+		}
+
+		if ec.EpochIndex != 0 {
+			// Check PoC generation + exchange phase overlap
+			pocStart := ec.StartOfPoC()
+			pocExchangeEnd := ec.PoCExchangeDeadline()
+			if startHeight <= pocExchangeEnd && endHeight >= pocStart {
+				return types.ErrMaintenanceOverlapsPoCPhase
+			}
+
+			// Check PoC validation phase overlap
+			valStart := ec.StartOfPoCValidation()
+			valEnd := ec.EndOfPoCValidation()
+			if startHeight <= valEnd && endHeight >= valStart {
+				return types.ErrMaintenanceOverlapsPoCPhase
+			}
+
+			// Check SetNewValidators (DKG) phase overlap
+			setNewVal := ec.SetNewValidators()
+			if startHeight <= setNewVal && endHeight >= setNewVal {
+				return types.ErrMaintenanceOverlapsDKGPhase
+			}
+		}
+
+		next := ec.NextEpochContext()
 		if next.StartOfPoC() > endHeight {
 			break
 		}
-		epochsToCheck = append(epochsToCheck, next)
-	}
-
-	for _, epoch := range epochsToCheck {
-		if epoch.EpochIndex == 0 {
-			continue
-		}
-
-		// Check PoC generation + exchange phase overlap
-		pocStart := epoch.StartOfPoC()
-		pocExchangeEnd := epoch.PoCExchangeDeadline()
-		if startHeight <= pocExchangeEnd && endHeight >= pocStart {
-			return types.ErrMaintenanceOverlapsPoCPhase
-		}
-
-		// Check PoC validation phase overlap
-		valStart := epoch.StartOfPoCValidation()
-		valEnd := epoch.EndOfPoCValidation()
-		if startHeight <= valEnd && endHeight >= valStart {
-			return types.ErrMaintenanceOverlapsPoCPhase
-		}
-
-		// Check SetNewValidators (DKG) phase overlap
-		setNewVal := epoch.SetNewValidators()
-		if startHeight <= setNewVal && endHeight >= setNewVal {
-			return types.ErrMaintenanceOverlapsDKGPhase
-		}
+		ec = next
 	}
 
 	return nil

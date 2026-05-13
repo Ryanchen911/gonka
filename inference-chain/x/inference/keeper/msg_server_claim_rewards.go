@@ -244,7 +244,7 @@ func (k msgServer) hasSignificantMissedValidations(ctx sdk.Context, msg *types.M
 	participantAddr, err := sdk.AccAddressFromBech32(msg.Creator)
 	if err == nil {
 		state, found := k.GetMaintenanceState(ctx, participantAddr)
-		if found && state.LastMaintenanceEpoch == msg.EpochIndex && msg.EpochIndex != 0 {
+		if found && k.maintenanceStateCoversEpoch(ctx, state, msg.EpochIndex) {
 			k.LogInfo("Skipping missed validation check: participant had maintenance in this epoch",
 				types.Maintenance, "participant", msg.Creator, "epoch", msg.EpochIndex)
 			return false, nil
