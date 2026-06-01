@@ -32,7 +32,9 @@ func CreateUpgradeHandler(
 			fromVM["capability"] = mm.Modules["capability"].(module.HasConsensusVersion).ConsensusVersion()
 		}
 
-		// Future v0.2.14 migration steps land below this line.
+		if err := cleanupLeftoverState(ctx, k); err != nil {
+			return nil, err
+		}
 
 		toVM, err := mm.RunMigrations(ctx, configurator, fromVM)
 		if err != nil {
@@ -42,4 +44,24 @@ func CreateUpgradeHandler(
 		k.LogInfo("successfully upgraded", types.Upgrades, "version", UpgradeName)
 		return toVM, nil
 	}
+}
+
+func cleanupLeftoverState(ctx context.Context, k keeper.Keeper) error {
+	k.LogInfo("cleaning up leftover state", types.Upgrades, "version", UpgradeName)
+
+	if err := k.MigrateEpochGroupValidationsToEntries(ctx); err != nil {
+		return err
+	}
+	if err := k.TopMiners.Clear(ctx, nil); err != nil {
+		return err
+	}
+	if err := k.ClearTrainingState(ctx); err != nil {
+		return err
+	}
+	if err := k.ClearLegacyPoCv2Data(ctx); err != nil {
+		return err
+	}
+
+	k.LogInfo("finished cleaning up leftover state", types.Upgrades, "version", UpgradeName)
+	return nil
 }
